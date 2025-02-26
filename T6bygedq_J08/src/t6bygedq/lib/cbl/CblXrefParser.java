@@ -1,4 +1,4 @@
-package t6bygedq.lib;
+package t6bygedq.lib.cbl;
 
 import static t6bygedq.lib.Helpers.dprintlnf;
 
@@ -12,6 +12,7 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import t6bygedq.lib.Helpers;
 import t6bygedq.lib.Helpers.Debug;
 
 /**
@@ -80,8 +81,8 @@ public final class CblXrefParser {
 		final Map<Integer, Def> target = this.selectParseTarget();
 		
 		if (null != target) {
-			final var sLineId = matcher.group(G_DEF_LINE_ID);
-			final var name = matcher.group(G_DEF_NAME);
+			final String sLineId = matcher.group(G_DEF_LINE_ID);
+			final String name = matcher.group(G_DEF_NAME);
 			
 			this.addNewDef(target, sLineId, name);
 		}
@@ -140,11 +141,11 @@ public final class CblXrefParser {
 		
 		ops.sort((r1, r2) -> Integer.compare((int) r1.get(0), (int) r2.get(0)));
 		
-		for (var i = 1; i < ops.size(); i += 1) {
-			final var previousRow = ops.get(i - 1);
-			final var currentRow = ops.get(i);
+		for (int i = 1; i < ops.size(); i += 1) {
+			final List<Object> previousRow = ops.get(i - 1);
+			final List<Object> currentRow = ops.get(i);
 			
-			for (var j = 1; j < currentRow.size(); j += 1) {
+			for (int j = 1; j < currentRow.size(); j += 1) {
 				if (null == currentRow.get(j)) {
 					currentRow.set(j, previousRow.get(j));
 				}
@@ -221,7 +222,7 @@ public final class CblXrefParser {
 	}
 	
 	private static final String rgxRep(final int min, final int max, final String regex) {
-		final var grp = rgxNcgrp(regex);
+		final String grp = rgxNcgrp(regex);
 		
 		if (Integer.MAX_VALUE == max) {
 			if (0 == min) {
@@ -307,13 +308,13 @@ public final class CblXrefParser {
 	private static final List<Object> emptyContext = Arrays.asList(null, null, null);
 	
 	public static final void generateFlows(final List<List<Object>> ops, final List<List<Object>> flows) {
-		final var context = new ArrayList<>(emptyContext);
-		final var srcs = new LinkedHashSet<>();
-		final var dsts = new LinkedHashSet<>();
+		final List<Object> context = new ArrayList<>(emptyContext);
+		final Collection<Object> srcs = new LinkedHashSet<>();
+		final Collection<Object> dsts = new LinkedHashSet<>();
 		
 		ops.forEach(row -> {
-			final var lineId = row.get(0);
-			final var obj = row.get(3);
+			final Object lineId = row.get(0);
+			final Object obj = row.get(3);
 			
 			if (!lineId.equals(context.get(0)) && "".equals(obj)) {
 				updateFlows(context, srcs, dsts, flows);
@@ -324,7 +325,7 @@ public final class CblXrefParser {
 				context.addAll(row.subList(0, 3));
 			}
 			
-			final var op = row.get(4);
+			final Object op = row.get(4);
 			
 			if (U_READ.equals(op)) {
 				srcs.add(obj);
@@ -338,13 +339,13 @@ public final class CblXrefParser {
 	
 	private static final void updateFlows(final List<Object> context, final Iterable<Object> srcs,
 			final Iterable<Object> dsts, final List<List<Object>> flows) {
-		final var verb = context.get(2);
-		final var verbIsValid = null != verb && !"".equals(verb);
+		final Object verb = context.get(2);
+		final boolean verbIsValid = null != verb && !"".equals(verb);
 		
 		if (verbIsValid) {
 			srcs.forEach(src -> {
 				dsts.forEach(dst -> {
-					final var move = new ArrayList<>(context.subList(1, 3));
+					final List<Object> move = new ArrayList<>(context.subList(1, 3));
 					move.add(src);
 					move.add(dst);
 					flows.add(move);
@@ -354,12 +355,12 @@ public final class CblXrefParser {
 	}
 	
 	private static final void parseRefs(final String refs, final Def def) {
-		final var refStrings = refs.split(" +");
+		final String[] refStrings = refs.split(" +");
 		
 		Arrays.stream(refStrings)
 				.filter(refString -> !refString.isEmpty())
 				.map(refString -> {
-					final var m = P_REF.matcher(refString);
+					final Matcher m = P_REF.matcher(refString);
 					
 					if (!m.matches()) {
 						throw new IllegalStateException(String.format("Invalid ref: %s", refString));

@@ -1,0 +1,376 @@
+package t6bygedq.lib.cbl;
+
+import java.io.IOException;
+import java.io.OutputStream;
+import java.lang.reflect.Field;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.function.Supplier;
+
+import t6bygedq.lib.Helpers;
+
+/**
+ * @author 2oLDNncs 20250208
+ */
+public abstract class RecPart {
+	
+	protected final Buffer buffer;
+	
+	private Buffer.Region.Generator dynamicRegionGenerator;
+	
+	protected RecPart(final Buffer buffer) {
+		this.buffer = buffer;
+	}
+	
+	public final int getLength() {
+		if (this.isStaticRegionGenerator()) {
+			return getStaticLength(this.getClass());
+		}
+		
+		return this.getDynamicRegionGenerator().getTotalLength();
+	}
+	
+	public final void read(final ReadingContext rc) throws IOException {
+		this.buffer.read(rc);
+		this.afterRead();
+	}
+	
+	protected void afterRead() {
+		Helpers.dprintlnf(this.getClass().getSimpleName());
+		
+		for (final Field field : this.getClass().getFields()) {
+			if (field.getName().startsWith("v")) {
+				try {
+					Helpers.dprintlnf(" %s<%s>", field.getName().substring(1), field.get(this));
+				} catch (final Exception e) {
+					System.err.println(String.format("Field: %s", field));
+					e.printStackTrace();
+				}
+			}
+		}
+	}
+	
+	public final void write(final OutputStream out) throws IOException {
+		this.beforeWrite();
+		this.buffer.write(out);
+	}
+	
+	protected void beforeWrite() {
+		//pass
+	}
+	
+	private final boolean isStaticRegionGenerator() {
+		return null == this.dynamicRegionGenerator;
+	}
+	
+	private final Buffer.Region.Generator getDynamicRegionGenerator() {
+		if (this.isStaticRegionGenerator()) {
+			this.dynamicRegionGenerator = getStaticRegionGenerator(this.getClass()).clone();
+		}
+		
+		return this.dynamicRegionGenerator;
+	}
+	
+	protected final Buffer.Region.Generator cloneDynamicRegionGenerator() {
+		return this.getDynamicRegionGenerator().clone();
+	}
+	
+	protected final Buffer.Region newDynamicFixedLengthRegion(final int length) {
+		if (this.buffer.getLength() < this.getDynamicRegionGenerator().getTotalLength() + length) {
+			this.buffer.insertBytes(this.buffer.getLength(), length);
+		}
+		
+		return this.getDynamicRegionGenerator().newFixedLength(length);
+	}
+	
+	protected final Buffer.Region newDynamicVariableLengthRegion(final Buffer.Region length) {
+		return this.getDynamicRegionGenerator().newVariableLength(length, this.buffer);
+	}
+	
+	protected final <E extends Enum<E>> EnumVar<E> newEnumVar(final int length, final Decoder<Integer, E> decoder) {
+		return this.newEnumVar(this.newDynamicFixedLengthRegion(length), decoder);
+	}
+	
+	protected final <E extends Enum<E>> EnumVar<E> newEnumVar(final Buffer.Region region, final Decoder<Integer, E> decoder) {
+		return new EnumVar<E>() {
+			
+			@Override
+			public final void set(final E value) {
+				buffer.setNum(region, decoder.getKey(value));
+			}
+			
+			@Override
+			public final E get() {
+				return decoder.get(buffer.getInt(region));
+			}
+			
+			@Override
+			public final String toString() {
+				return Objects.toString(this.get());
+			}
+			
+		};
+	}
+	
+	protected final BooleanVar newBooleanVar(final Buffer.Region region, final int bitIndex) {
+		return new BooleanVar() {
+			
+			@Override
+			public final void set(final boolean value) {
+				buffer.setBit(region, bitIndex, value);
+			}
+			
+			@Override
+			public final boolean get() {
+				return buffer.testBit(region, bitIndex);
+			}
+			
+			@Override
+			public final String toString() {
+				return Objects.toString(this.get());
+			}
+			
+		};
+	}
+	
+	protected final IntVar newIntVar(final int length) {
+		return this.newIntVar(this.newDynamicFixedLengthRegion(length));
+	}
+	
+	protected final IntVar newIntVar(final Buffer.Region region) {
+		return new IntVar() {
+			
+			@Override
+			public final void set(final int value) {
+				buffer.setNum(region, value);
+			}
+			
+			@Override
+			public final int get() {
+				return buffer.getInt(region);
+			}
+			
+			@Override
+			public final String toString() {
+				return Objects.toString(this.get());
+			}
+			
+		};
+	}
+	
+	protected final LongVar newLongVar(final int length) {
+		return this.newLongVar(this.newDynamicFixedLengthRegion(length));
+	}
+	
+	protected final LongVar newLongVar(final Buffer.Region region) {
+		return new LongVar() {
+			
+			@Override
+			public final void set(final long value) {
+				buffer.setNum(region, value);
+			}
+			
+			@Override
+			public final long get() {
+				return buffer.getInt(region);
+			}
+			
+			@Override
+			public final String toString() {
+				return Objects.toString(this.get());
+			}
+			
+		};
+	}
+	
+	protected final <E> ListVar_<E> newListVarV2(final Buffer.Region length, final Supplier<E> newElement) {
+		final Buffer.Region.Generator rg = this.getDynamicRegionGenerator().clone();
+		
+		return new ListVar_<E>() {
+			
+			private final IntVar vLength = newIntVar(length);
+			
+			private int currentLength;
+			
+			@Override
+			protected final boolean newElementNeeded() {
+				return this.currentLength < this.vLength.get();
+			}
+			
+			@Override
+			protected final E newElement() {
+				final int rgLength = rg.getTotalLength();
+				final E result = newElement.get();
+				this.currentLength += rg.getTotalLength() - rgLength;
+				
+				return result;
+			}
+			
+		};
+	}
+	
+	protected final <E> ListVar_<E> newListVarV(final Buffer.Region count, final Supplier<E> newElement) {
+		return new ListVar2<E>(this.newIntVar(count)) {
+			
+			@Override
+			protected final E newElement() {
+				return newElement.get();
+			}
+			
+		};
+	}
+	
+	protected final IntListVar newIntListVarV(final Buffer.Region count) {
+		final int elementSize = 4;
+		final Buffer.Region region = this.getDynamicRegionGenerator().newVariableLength(count, elementSize, this.buffer);
+		
+		return new IntListVar() {
+			
+			@Override
+			public final int count() {
+				return buffer.getInt(count);
+			}
+			
+			@Override
+			public final void set(final int index, final int value) {
+				buffer.setNum(region.getOffset() + index * elementSize, elementSize, value);
+			}
+			
+			@Override
+			public final void rem(final int index) {
+				// TODO Auto-generated method stub
+				
+			}
+			
+			@Override
+			public final int get(final int index) {
+				return (int) buffer.getNum(region.getOffset() + index * elementSize, elementSize);
+			}
+			
+			@Override
+			public final void add(final int value) {
+				final int newIndex = this.count();
+				buffer.insertBytes(region.getNextOffset(), elementSize);
+				buffer.setNum(count, newIndex + 1);
+				this.set(newIndex, value);
+			}
+			
+			@Override
+			public final String toString() {
+				final List<Object> elements = new ArrayList<>();
+				final int n = this.count();
+				
+				for (int i = 0; i < n; i += 1) {
+					elements.add(this.get(i));
+				}
+				
+				return elements.toString();
+			}
+			
+		};
+	}
+	
+	protected final LongListVar newLongListVarV(final Buffer.Region count) {
+		final int elementSize = 8;
+		final Buffer.Region region = this.getDynamicRegionGenerator().newVariableLength(count, elementSize, this.buffer);
+		
+		return new LongListVar() {
+			
+			@Override
+			public final int count() {
+				return buffer.getInt(count);
+			}
+			
+			@Override
+			public final void set(final int index, final long value) {
+				buffer.setNum(region.getOffset() + index * elementSize, elementSize, value);
+			}
+			
+			@Override
+			public final void rem(final int index) {
+				// TODO Auto-generated method stub
+				
+			}
+			
+			@Override
+			public final long get(final int index) {
+				return buffer.getNum(region.getOffset() + index * elementSize, elementSize);
+			}
+			
+			@Override
+			public final void add(final long value) {
+				final int newIndex = this.count();
+				buffer.insertBytes(region.getNextOffset(), elementSize);
+				buffer.setNum(count, newIndex + 1);
+				this.set(newIndex, value);
+			}
+			
+			@Override
+			public final String toString() {
+				final List<Object> elements = new ArrayList<>();
+				final int n = this.count();
+				
+				for (int i = 0; i < n; i += 1) {
+					elements.add(this.get(i));
+				}
+				
+				return elements.toString();
+			}
+			
+		};
+	}
+	
+	protected final StringVar newStringVarV(final Buffer.Region length) {
+		return this.newStringVarF(this.getDynamicRegionGenerator().newVariableLength(length, this.buffer));
+	}
+	
+	protected final StringVar newStringVarF(final int length) {
+		return this.newStringVarF(this.newDynamicFixedLengthRegion(length));
+	}
+	
+	protected final StringVar newStringVarF(final Buffer.Region region) {
+		return new StringVar() {
+			
+			@Override
+			public final void set(final String value) {
+				buffer.setStr(region, value);
+			}
+			
+			@Override
+			public final String get() {
+				return buffer.getStr(region);
+			}
+			
+			@Override
+			public final String toString() {
+				return Objects.toString(this.get());
+			}
+			
+		};
+	}
+	
+	private static final Map<Class<?>, Buffer.Region.Generator> staticRegionGenerators = new HashMap<>();
+	
+	protected static final Buffer.Region.Generator getStaticRegionGenerator(final Class<?> cls) {
+		return getStaticRegionGenerator(cls, null);
+	}
+	
+	protected static final Buffer.Region.Generator getStaticRegionGenerator(final Class<?> cls, final Buffer.Region.Generator base) {
+		try {
+			// Ensure static initialization
+			Class.forName(cls.getName(), true, cls.getClassLoader());
+		} catch (final ClassNotFoundException e) {
+			throw new RuntimeException(e);
+		}
+		
+		return staticRegionGenerators.computeIfAbsent(cls, __ -> null == base ? new Buffer.Region.Generator() : base.clone());
+	}
+	
+	static final int getStaticLength(final Class<? extends RecPart> cls) {
+		return getStaticRegionGenerator(cls).getTotalLength();
+	}
+	
+}

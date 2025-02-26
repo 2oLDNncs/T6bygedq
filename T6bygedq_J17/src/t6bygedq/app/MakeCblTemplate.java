@@ -4,7 +4,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 
 import t6bygedq.lib.ArgsParser;
-import t6bygedq.lib.CblTemplateMaker;
+import t6bygedq.lib.cbl.CblTemplateMaker;
 
 /**
  * @author 2oLDNncs 20241228

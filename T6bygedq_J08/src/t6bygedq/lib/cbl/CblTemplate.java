@@ -1,9 +1,9 @@
-package t6bygedq.lib;
+package t6bygedq.lib.cbl;
 
-import static t6bygedq.lib.CblConstants.*;
 import static t6bygedq.lib.Helpers.cast;
 import static t6bygedq.lib.Helpers.getMethodName;
 import static t6bygedq.lib.Helpers.replaceCharAt;
+import static t6bygedq.lib.cbl.CblConstants.*;
 
 import java.io.PrintStream;
 import java.lang.annotation.ElementType;
@@ -12,10 +12,14 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 import java.lang.reflect.Method;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.stream.Collectors;
+
+import t6bygedq.lib.TextTemplate;
+import t6bygedq.lib.TextTemplateIndenter;
 
 /**
  * @author 2oLDNncs 20241228
@@ -57,7 +61,7 @@ public abstract class CblTemplate extends TextTemplate {
 	}
 	
 	protected void setup() {
-		final var declaredMethodNames = Arrays.stream(this.getClass().getDeclaredMethods())
+		final Collection<String> declaredMethodNames = Arrays.stream(this.getClass().getDeclaredMethods())
 				.map(Method::getName)
 				.collect(Collectors.toSet());
 		
@@ -77,7 +81,7 @@ public abstract class CblTemplate extends TextTemplate {
 	}
 	
 	protected final void setIndicator(final char indicator, final Runnable block) {
-		final var saved = this.indt.getCurrent().charAt(6);
+		final char saved = this.indt.getCurrent().charAt(6);
 		
 		this.setIndicator(indicator);
 		
@@ -273,7 +277,7 @@ public abstract class CblTemplate extends TextTemplate {
 	
 	@Method_printFullLine
 	protected void printFullLine(final String line) {
-		final var saved = this.indt.getCurrent();
+		final String saved = this.indt.getCurrent();
 		
 		this.indt.setCurrent("");
 		
@@ -294,7 +298,7 @@ public abstract class CblTemplate extends TextTemplate {
 			}
 			break;
 		case VB_DISPLAY:
-			for (final var item : args) {
+			for (final String item : args) {
 				this.addRefTo(this.getDef(this.items, item), CblXrefParser.U_READ);
 			}
 			break;

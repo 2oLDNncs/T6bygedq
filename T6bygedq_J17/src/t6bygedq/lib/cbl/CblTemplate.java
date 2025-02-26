@@ -1,8 +1,9 @@
-package t6bygedq.lib;
+package t6bygedq.lib.cbl;
 
 import static t6bygedq.lib.Helpers.cast;
 import static t6bygedq.lib.Helpers.getMethodName;
 import static t6bygedq.lib.Helpers.replaceCharAt;
+import static t6bygedq.lib.cbl.CblConstants.*;
 
 import java.io.PrintStream;
 import java.lang.annotation.ElementType;
@@ -11,11 +12,13 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 import java.lang.reflect.Method;
 import java.util.Arrays;
-import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.stream.Collectors;
+
+import t6bygedq.lib.TextTemplate;
+import t6bygedq.lib.TextTemplateIndenter;
 
 /**
  * @author 2oLDNncs 20241228
@@ -25,6 +28,8 @@ public abstract class CblTemplate extends TextTemplate {
 	protected final TextTemplateIndenter indt;
 	
 	protected String programId = "HELLO001";
+	
+	protected boolean debuggingMode = false;
 	
 	protected boolean hasEnvironmentDivision = false;
 	
@@ -55,7 +60,7 @@ public abstract class CblTemplate extends TextTemplate {
 	}
 	
 	protected void setup() {
-		final Collection<String> declaredMethodNames = Arrays.stream(this.getClass().getDeclaredMethods())
+		final var declaredMethodNames = Arrays.stream(this.getClass().getDeclaredMethods())
 				.map(Method::getName)
 				.collect(Collectors.toSet());
 		
@@ -75,7 +80,7 @@ public abstract class CblTemplate extends TextTemplate {
 	}
 	
 	protected final void setIndicator(final char indicator, final Runnable block) {
-		final char saved = this.indt.getCurrent().charAt(6);
+		final var saved = this.indt.getCurrent().charAt(6);
 		
 		this.setIndicator(indicator);
 		
@@ -131,18 +136,18 @@ public abstract class CblTemplate extends TextTemplate {
 	@Method_printIdentificationDivision
 	protected void printIdentificationDivision() {
 		this.printFullLine(SEPARATOR_LINE);
-		this.println("IDENTIFICATION DIVISION.");
+		this.printlnf("%s %s.", KW_IDENTIFICATION, KW_DIVISION);
 		this.printFullLine(SEPARATOR_LINE);
 		this.println("");
 		
-		this.printlnf("PROGRAM-ID. %s.", this.programId);
+		this.printlnf("%s. %s.", KW_PROGRAM_ID, this.programId);
 		this.println("");
 	}
 	
 	@Method_printEnvironmentDivision
 	protected void printEnvironmentDivision() {
 		this.printFullLine(SEPARATOR_LINE);
-		this.println("ENVIRONMENT DIVISION.");
+		this.printlnf("%s %s.", KW_ENVIRONMENT, KW_DIVISION);
 		this.printFullLine(SEPARATOR_LINE);
 		this.println("");
 		
@@ -154,18 +159,19 @@ public abstract class CblTemplate extends TextTemplate {
 	@Method_printConfigurationSection
 	protected void printConfigurationSection() {
 		this.printFullLine(SEPARATOR_LINE);
-		this.println("CONFIGURATION SECTION.");
+		this.printlnf("%s %s.", KW_CONFIGURATION, KW_SECTION);
 		this.printFullLine(SEPARATOR_LINE);
 		this.println("");
-		
-		this.printComment("SOURCE-COMPUTER. IBM WITH DEBUGGING MODE.");
+		this.setIndicator(this.debuggingMode ? INDICATOR_NONE : INDICATOR_COMMENT, () -> {
+			this.printlnf("%s. IBM %s %s %s.", KW_SOURCE_COMPUTER, KW_WITH, KW_DEBUGGING, KW_MODE);
+		});
 		this.println("");
 	}
 	
 	@Method_printDataDivision
 	protected void printDataDivision() {
 		this.printFullLine(SEPARATOR_LINE);
-		this.println("DATA DIVISION.");
+		this.printlnf("%s %s.", KW_DATA, KW_DIVISION);
 		this.printFullLine(SEPARATOR_LINE);
 		this.println("");
 		
@@ -185,7 +191,7 @@ public abstract class CblTemplate extends TextTemplate {
 	@Method_printWorkingStorageSection
 	protected void printWorkingStorageSection() {
 		this.printFullLine(SEPARATOR_LINE);
-		this.println("WORKING-STORAGE SECTION.");
+		this.printlnf("%s %s.", KW_WORKING_STORAGE, KW_SECTION);
 		this.printFullLine(SEPARATOR_LINE);
 		this.println("");
 	}
@@ -193,7 +199,7 @@ public abstract class CblTemplate extends TextTemplate {
 	@Method_printLocalStorageSection
 	protected void printLocalStorageSection() {
 		this.printFullLine(SEPARATOR_LINE);
-		this.println("LOCAL-STORAGE SECTION.");
+		this.printlnf("%s %s.", KW_LOCAL_STORAGE, KW_SECTION);
 		this.printFullLine(SEPARATOR_LINE);
 		this.println("");
 	}
@@ -201,7 +207,7 @@ public abstract class CblTemplate extends TextTemplate {
 	@Method_printLinkageSection
 	protected void printLinkageSection() {
 		this.printFullLine(SEPARATOR_LINE);
-		this.println("LINKAGE SECTION.");
+		this.printlnf("%s %s.", KW_LINKAGE, KW_SECTION);
 		this.printFullLine(SEPARATOR_LINE);
 		this.println("");
 	}
@@ -209,7 +215,7 @@ public abstract class CblTemplate extends TextTemplate {
 	@Method_printProcedureDivision
 	protected void printProcedureDivision() {
 		this.printFullLine(SEPARATOR_LINE);
-		this.println("PROCEDURE DIVISION.");
+		this.printlnf("%s %s.", KW_PROCEDURE, KW_DIVISION);
 		this.printFullLine(SEPARATOR_LINE);
 		
 		this.indent(() -> {
@@ -225,8 +231,10 @@ public abstract class CblTemplate extends TextTemplate {
 	}
 	
 	protected void printProcedureCode() {
-		this.printStmt(VERB_DISPLAY, "'Hello World.'");
-		this.printStmt(VERB_GOBACK);
+		this.printVerb(VB_DISPLAY);
+		this.println(" 'Hello World.'");
+//		this.printStmt(VB_DISPLAY, "'Hello World.'");
+		this.printStmt(VB_GOBACK);
 	}
 	
 	protected void printParagraphs() {
@@ -268,7 +276,7 @@ public abstract class CblTemplate extends TextTemplate {
 	
 	@Method_printFullLine
 	protected void printFullLine(final String line) {
-		final String saved = this.indt.getCurrent();
+		final var saved = this.indt.getCurrent();
 		
 		this.indt.setCurrent("");
 		
@@ -283,13 +291,13 @@ public abstract class CblTemplate extends TextTemplate {
 		this.addRefTo(this.getDef(this.verbs, verb), "");
 		
 		switch (verb) {
-		case VERB_PERFORM:
+		case VB_PERFORM:
 			if (1 == args.length) {
 				this.addRefTo(this.getDef(this.procs, args[0]), CblXrefParser.U_PERFORM);
 			}
 			break;
-		case VERB_DISPLAY:
-			for (final String item : args) {
+		case VB_DISPLAY:
+			for (final var item : args) {
 				this.addRefTo(this.getDef(this.items, item), CblXrefParser.U_READ);
 			}
 			break;
@@ -298,6 +306,16 @@ public abstract class CblTemplate extends TextTemplate {
 		// TODO separate args into multiple lines
 		
 		this.printlnf("%s %s", verb, String.join(" ", args));
+	}
+	
+	protected void printVerb(final String verb) {
+		this.addRefTo(this.getDef(this.verbs, verb), "");
+		this.print(verb);
+	}
+	
+	protected void printItem(final String itemName, final String usage) {
+		this.addRefTo(this.getDef(this.items, itemName), usage);
+		this.print(itemName);
 	}
 	
 	private final CblXrefParser.Def getDef(final Map<String, CblXrefParser.Def> map, final String name) {
@@ -324,31 +342,14 @@ public abstract class CblTemplate extends TextTemplate {
 	
 	protected static final String CBL_COLS       = "----+-*--1----+----2----+----3----+----4----+----5----+----6----+----7--";
 	protected static final String SEPARATOR_LINE = "      *=================================================================";
+	
+	
+	// Indicators (character at position 7)
+	
 	protected static final char INDICATOR_NONE         = ' ';
 	protected static final char INDICATOR_CONTINUATION = '-';
 	protected static final char INDICATOR_COMMENT      = '*';
 	protected static final char INDICATOR_DEBUG        = 'D';
-	
-	public static final String VERB_ACCEPT = "ACCEPT";
-	public static final String VERB_ADD = "ADD";
-	public static final String VERB_CALL = "CALL";
-	public static final String VERB_CONTINUE = "CONTINUE";
-	public static final String VERB_DISPLAY = "DISPLAY";
-	public static final String VERB_DIVIDE = "DIVIDE";
-	public static final String VERB_EVALUATE = "EVALUATE";
-	public static final String VERB_GOBACK = "GOBACK";
-	public static final String VERB_IF = "IF";
-	public static final String VERB_MOVE = "MOVE";
-	public static final String VERB_MULTIPLY = "MULTIPLY";
-	public static final String VERB_PERFORM = "PERFORM";
-	public static final String VERB_SET = "SET";
-	public static final String VERB_STRING = "STRING";
-	public static final String VERB_SUBTRACT = "SUBTRACT";
-	
-	public static final String KW_BY = "BY";
-	public static final String KW_FROM = "FROM";
-	public static final String KW_INTO = "INTO";
-	public static final String KW_TO = "TO";
 	
 	public static final String M_printFullLine = getMethodName(
 			CblTemplate.class, Method_printFullLine.class);

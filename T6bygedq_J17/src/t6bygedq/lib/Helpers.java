@@ -48,6 +48,56 @@ public final class Helpers {
 		//pass
 	}
 	
+	public static final void setNum(final byte[] bytes, final int offset, final int length, final boolean littleEndian, final long value) {
+		if (littleEndian) {
+			for (var i = 0; i < length; i += 1) {
+				bytes[offset + i] = (byte) (value >> (8 * i));
+			}
+		} else {
+			for (var i = 0; i < length; i += 1) {
+				bytes[offset + i] = (byte) (value >> (8 * (length - 1 - i)));
+			}
+		}
+	}
+	
+	public static final long getNum(final byte[] bytes, final int offset, final int length, final boolean littleEndian) {
+		var result = 0L;
+		
+		if (littleEndian) {
+			for (var i = offset + length - 1; offset <= i; i -= 1) {
+				result = (result * 256L) + Byte.toUnsignedInt(bytes[i]);
+			}
+		} else {
+			for (var i = offset; i < offset + length; i += 1) {
+				result = (result * 256L) + Byte.toUnsignedInt(bytes[i]);
+			}
+		}
+		
+		return result;
+	}
+	
+	public static final boolean testBit(final int flags, final int bitIndex) {
+		return testMask(flags, bitMask(bitIndex));
+	}
+	
+	public static final byte setBit(final int flags, final int bitIndex, final boolean value) {
+		final var mask = bitMask(bitIndex);
+		
+		if (value) {
+			return (byte) (flags | mask);
+		}
+		
+		return (byte) (flags & (~mask));
+	}
+	
+	private static final int bitMask(final int bitIndex) {
+		return 0b10000000 >> bitIndex;
+	}
+	
+	public static final boolean testMask(final int flags, final int mask) {
+		return 0 != (flags & mask);
+	}
+	
 	public static final String dformat(final String format, final Object... args) {
 		final var stackTrace = Thread.currentThread().getStackTrace();
 		final var callerSte = stackTrace[3];

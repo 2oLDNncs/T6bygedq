@@ -1,15 +1,17 @@
-package t6bygedq.lib;
+package t6bygedq.lib.cbl;
 
-import static t6bygedq.lib.CblTemplate.M_printDataDivision;
-import static t6bygedq.lib.CblTemplate.M_printEndProgram;
-import static t6bygedq.lib.CblTemplate.M_printEnvirontmentDivision;
-import static t6bygedq.lib.CblTemplate.M_printFullLine;
-import static t6bygedq.lib.CblTemplate.M_printIdentificationDivision;
-import static t6bygedq.lib.CblTemplate.M_printProcedureDivision;
+import static t6bygedq.lib.cbl.CblTemplate.M_printDataDivision;
+import static t6bygedq.lib.cbl.CblTemplate.M_printEndProgram;
+import static t6bygedq.lib.cbl.CblTemplate.M_printEnvirontmentDivision;
+import static t6bygedq.lib.cbl.CblTemplate.M_printFullLine;
+import static t6bygedq.lib.cbl.CblTemplate.M_printIdentificationDivision;
+import static t6bygedq.lib.cbl.CblTemplate.M_printProcedureDivision;
 
 import java.io.PrintStream;
 import java.util.ListIterator;
 import java.util.regex.Pattern;
+
+import t6bygedq.lib.JavaTemplate;
 
 /**
  * @author 2oLDNncs 20241230
