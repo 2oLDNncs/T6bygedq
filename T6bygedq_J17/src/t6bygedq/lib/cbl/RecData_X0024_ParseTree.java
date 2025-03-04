@@ -97,19 +97,19 @@ public final class RecData_X0024_ParseTree extends RecData {
 		DATA_ENTRY_NAME,
 		DATA_ENTRY_LEVEL,
 		EXEC_ENTRY,
-		EVALUATE_SUBJECT_PHRASE,
-		EVALUATE_WHEN_PHRASE,
-		EVALUATE_WHEN_OTHER_PHRASE,
-		SEARCH_WHEN_PHRASE,
-		INSPECT_CONVERTING_PHRASE,
-		INSPECT_REPLACING_PHRASE,
-		INSPECT_TALLYING_PHRASE,
-		PERFORM_UNTIL_PHRASE,
-		PERFORM_VARYING_PHRASE,
-		PERFORM_AFTER_PHRASE,
+		EVALUATE_SUBJECT_PHRASE(NodeSubtype.decoder7),
+		EVALUATE_WHEN_PHRASE(NodeSubtype.decoder7),
+		EVALUATE_WHEN_OTHER_PHRASE(NodeSubtype.decoder7),
+		SEARCH_WHEN_PHRASE(NodeSubtype.decoder7),
+		INSPECT_CONVERTING_PHRASE(NodeSubtype.decoder7),
+		INSPECT_REPLACING_PHRASE(NodeSubtype.decoder7),
+		INSPECT_TALLYING_PHRASE(NodeSubtype.decoder7),
+		PERFORM_UNTIL_PHRASE(NodeSubtype.decoder7),
+		PERFORM_VARYING_PHRASE(NodeSubtype.decoder7),
+		PERFORM_AFTER_PHRASE(NodeSubtype.decoder7),
 		STATEMENT_BLOCK,
 		SCOPE_TERMINATOR,
-		INITIALIZE_REPLACING_PHRASE,
+		INITIALIZE_REPLACING_PHRASE(NodeSubtype.decoder7),
 		EXEC_CICS_COMMAND,
 		
 		// <6.1>
@@ -120,12 +120,12 @@ public final class RecData_X0024_ParseTree extends RecData {
 		ALLOCATE_LOC,
 		// </6.1>
 		
-		DATA_DIVISION_PHRASE,
+		DATA_DIVISION_PHRASE(NodeSubtype.decoder7),
 		PHRASE(NodeSubtype.decoder7),
-		ON_PHRASE,
-		NOT_PHRASE,
-		THEN_PHRASE,
-		ELSE_PHRASE,
+		ON_PHRASE(NodeSubtype.decoder7),
+		NOT_PHRASE(NodeSubtype.decoder7),
+		THEN_PHRASE(NodeSubtype.decoder7),
+		ELSE_PHRASE(NodeSubtype.decoder7),
 		CONDITION,
 		EXPRESSION,
 		RELATIVE_INDEXING,
@@ -651,6 +651,7 @@ public final class RecData_X0024_ParseTree extends RecData {
 		
 		static final Decoder<Integer, NodeSubtype> decoder4 =
 				new ReversibleMap<Integer, NodeSubtype>()
+				.set(0, NONE)
 				.set(1, BLANK_WHEN_ZERO)
 				.set(2, DATA_NAME_OR_FILLER)
 				.set(3, JUSTIFIED)
@@ -752,6 +753,7 @@ public final class RecData_X0024_ParseTree extends RecData {
 		
 		static final Decoder<Integer, NodeSubtype> decoder7 =
 				new ReversibleMap<Integer, NodeSubtype>()
+				.set(0, NONE)
 				.set(1, INTO)
 				.set(2, DELIMITED)
 				.set(3, INITIALIZE_REPLACING)
