@@ -14,6 +14,8 @@ public final class ReadingContext {
 	
 	int columnNumber;
 	
+	int bytesRead;
+	
 	public ReadingContext(final InputStream input) {
 		this.input = input;
 	}
@@ -32,18 +34,16 @@ public final class ReadingContext {
 	
 	public final void incrLineNumber() {
 		this.lineNumber += 1;
-	}
-	
-	public final void incrColumnNumber() {
-		this.columnNumber += 1;
+		this.columnNumber = 1;
 	}
 	
 	public final void read(final byte[] bytes) throws IOException {
-		final int n = this.input.read(bytes);
+		this.columnNumber += this.bytesRead;
+		this.bytesRead = this.input.read(bytes);
 		
-		if (bytes.length != n) {
+		if (bytes.length != this.bytesRead) {
 			throw new IllegalStateException(String.format("Read error at (%s:%s): Expected %s bytes, Actual %s bytes",
-					this.lineNumber, this.columnNumber, bytes.length, n));
+					this.lineNumber, this.columnNumber, bytes.length, this.bytesRead));
 		}
 	}
 	

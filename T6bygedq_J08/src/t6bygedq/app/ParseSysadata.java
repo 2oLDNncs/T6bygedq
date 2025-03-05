@@ -79,8 +79,7 @@ public final class ParseSysadata {
 			final ReadingContext rc = new ReadingContext(in);
 			
 			while (rc.isInputAvailable()) {
-				rc.incrLineNumber();;
-				rc.incrColumnNumber();;
+				rc.incrLineNumber();
 				
 				try {
 					read_x_y.read(rc);
