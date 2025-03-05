@@ -109,26 +109,30 @@ public final class RecData_X0024_ParseTree extends RecData {
 		PERFORM_AFTER_PHRASE(NodeSubtype.decoder7),
 		STATEMENT_BLOCK,
 		SCOPE_TERMINATOR,
-		INITIALIZE_REPLACING_PHRASE,
+		INITIALIZE_REPLACING_PHRASE(NodeSubtype.decoder7),
 		EXEC_CICS_COMMAND,
+		
+		// <6.1>
 		INITIALIZE_WITH_FILLER,
 		INITIALIZE_TO_VALUE,
 		INITIALIZE_TO_DEFAULT,
 		ALLOCATE_INITIALIZED,
 		ALLOCATE_LOC,
-		DATA_DIVISION_PHRASE,
+		// </6.1>
+		
+		DATA_DIVISION_PHRASE(NodeSubtype.decoder7),
 		PHRASE(NodeSubtype.decoder7),
-		ON_PHRASE,
-		NOT_PHRASE,
-		THEN_PHRASE,
-		ELSE_PHRASE,
+		ON_PHRASE(NodeSubtype.decoder7),
+		NOT_PHRASE(NodeSubtype.decoder7),
+		THEN_PHRASE(NodeSubtype.decoder7),
+		ELSE_PHRASE(NodeSubtype.decoder7),
 		CONDITION,
 		EXPRESSION,
 		RELATIVE_INDEXING,
 		EXEC_CICS_OPTION,
 		RESERVED_WORD(NodeSubtype.decoder11),
 		INITIALIZE_REPLACING_CATEGORY,
-		SECTION_OR_PARAGRAPH_NAME,
+		SECTION_OR_PARAGRAPH_NAME(NodeSubtype.decoder14),
 		IDENTIFIER(NodeSubtype.decoder12),
 		ALPHABET_NAME,
 		CLASS_NAME,
@@ -141,7 +145,7 @@ public final class RecData_X0024_ParseTree extends RecData {
 		FUNCTION_IDENTIFIER(NodeSubtype.decoder8),
 		DATA_NAME(NodeSubtype.decoder12),
 		SPECIAL_REGISTER(NodeSubtype.decoder9),
-		PROCEDURE_REFERENCE(NodeSubtype.decoder14),
+		PROCEDURE_REFERENCE,
 		ARITHMETIC_OPERATOR(NodeSubtype.decoder16),
 		ALL_PROCEDURES,
 		INITIALIZE_LITERAL_NO_TOKENS(NodeSubtype.decoder13),
@@ -380,9 +384,13 @@ public final class RecData_X0024_ParseTree extends RecData {
 		EXEC_CICS,
 		WRITE,
 		XML,
+		
+		//<6.1>
 		ALLOCATE,
 		FREE,
 		JSON,
+		//</6.1>
+		
 		INTO,
 		DELIMITED,
 		INITIALIZE_REPLACING,
@@ -449,9 +457,13 @@ public final class RecData_X0024_ParseTree extends RecData {
 		XML_GENERATE_NAMESPACE,
 		XML_PARSE_PROCESSING,
 		XML_PARSE_VALIDATING,
+		
+		//<6.1>
 		XML_GENERATE_NAME,
 		XML_GENERATE_TYPE,
 		XML_GENERATE_SUPPRESS,
+		//</6.1>
+		
 		COS,
 		LOG,
 		MAX,
@@ -497,14 +509,25 @@ public final class RecData_X0024_ParseTree extends RecData {
 		YEAR_TO_YYYY,
 		DAY_TO_YYYYDDD,
 		DATE_TO_YYYYMMDD,
+		
+		//<4.2>
+		UNDATE,
+		DATEVAL,
+		YEARWINDOW,
+		//</4.2>
+		
 		DISPLAY_OF,
 		NATIONAL_OF,
+		
+		//<6.1>
 		UPOS,
 		UVALID,
 		UWIDTH,
 		ULENGTH,
 		USUBSTR,
 		USUPPLEMENTARY,
+		//</6.1>
+		
 		ADDRESS_OF,
 		LENGTH_OF,
 		ALPHABETIC_10,
@@ -546,6 +569,8 @@ public final class RecData_X0024_ParseTree extends RecData {
 		PAGE,
 		DATE_YYYYMMDD,
 		DAY_YYYYDDD,
+		
+		//<6.1>
 		ATTRIBUTE,
 		ELEMENT,
 		CONTENT,
@@ -553,6 +578,8 @@ public final class RecData_X0024_ParseTree extends RecData {
 		NONNUMERIC,
 		EVERY,
 		WHEN,
+		//</6.1>
+		
 		PLUS,
 		MINUS,
 		TIMES,
@@ -579,6 +606,7 @@ public final class RecData_X0024_ParseTree extends RecData {
 		
 		static final Decoder<Integer, NodeSubtype> decoder1 =
 				new ReversibleMap<Integer, NodeSubtype>()
+				.set(0, NONE)
 				.set(1, CONFIGURATION_SECTION)
 				.set(2, INPUT_OUTPUT_SECTION)
 				.set(3, FILE_SECTION)
@@ -590,6 +618,7 @@ public final class RecData_X0024_ParseTree extends RecData {
 		
 		static final Decoder<Integer, NodeSubtype> decoder2 =
 				new ReversibleMap<Integer, NodeSubtype>()
+				.set(0, NONE)
 				.set(1, PROGRAM_ID_PARAGRAPH)
 				.set(2, AUTHOR_PARAGRAPH)
 				.set(3, INSTALLATION_PARAGRAPH)
@@ -608,6 +637,7 @@ public final class RecData_X0024_ParseTree extends RecData {
 		
 		static final Decoder<Integer, NodeSubtype> decoder3 =
 				new ReversibleMap<Integer, NodeSubtype>()
+				.set(0, NONE)
 				.set(1, WITH_DEBUGGING_MODE)
 				.set(2, MEMORY_SIZE)
 				.set(3, SEGMENT_LIMIT)
@@ -624,6 +654,7 @@ public final class RecData_X0024_ParseTree extends RecData {
 		
 		static final Decoder<Integer, NodeSubtype> decoder4 =
 				new ReversibleMap<Integer, NodeSubtype>()
+				.set(0, NONE)
 				.set(1, BLANK_WHEN_ZERO)
 				.set(2, DATA_NAME_OR_FILLER)
 				.set(3, JUSTIFIED)
@@ -642,6 +673,7 @@ public final class RecData_X0024_ParseTree extends RecData {
 		
 		static final Decoder<Integer, NodeSubtype> decoder5 =
 				new ReversibleMap<Integer, NodeSubtype>()
+				.set(0, NONE)
 				.set(1, FILE_STATUS)
 				.set(2, ORGANIZATION)
 				.set(3, ACCESS_MODE)
@@ -671,6 +703,7 @@ public final class RecData_X0024_ParseTree extends RecData {
 		
 		static final Decoder<Integer, NodeSubtype> decoder6 =
 				new ReversibleMap<Integer, NodeSubtype>()
+				.set(0, NONE)
 				.set(2, NEXT_SENTENCE)
 				.set(3, ACCEPT)
 				.set(4, ADD)
@@ -725,6 +758,7 @@ public final class RecData_X0024_ParseTree extends RecData {
 		
 		static final Decoder<Integer, NodeSubtype> decoder7 =
 				new ReversibleMap<Integer, NodeSubtype>()
+				.set(0, NONE)
 				.set(1, INTO)
 				.set(2, DELIMITED)
 				.set(3, INITIALIZE_REPLACING)
@@ -798,6 +832,7 @@ public final class RecData_X0024_ParseTree extends RecData {
 		
 		static final Decoder<Integer, NodeSubtype> decoder8 =
 				new ReversibleMap<Integer, NodeSubtype>()
+				.set(0, NONE)
 				.set(1, COS)
 				.set(2, LOG)
 				.set(3, MAX)
@@ -843,6 +878,9 @@ public final class RecData_X0024_ParseTree extends RecData {
 				.set(43, YEAR_TO_YYYY)
 				.set(44, DAY_TO_YYYYDDD)
 				.set(45, DATE_TO_YYYYMMDD)
+				.set(46, UNDATE)
+				.set(47, DATEVAL)
+				.set(48, YEARWINDOW)
 				.set(49, DISPLAY_OF)
 				.set(50, NATIONAL_OF)
 				.set(51, UPOS)
@@ -855,12 +893,14 @@ public final class RecData_X0024_ParseTree extends RecData {
 		
 		static final Decoder<Integer, NodeSubtype> decoder9 =
 				new ReversibleMap<Integer, NodeSubtype>()
+				.set(0, NONE)
 				.set(1, ADDRESS_OF)
 				.set(2, LENGTH_OF)
 				;
 		
 		static final Decoder<Integer, NodeSubtype> decoder10 =
 				new ReversibleMap<Integer, NodeSubtype>()
+				.set(0, NONE)
 				.set(1, ALPHABETIC_10)
 				.set(2, ALPHABETIC_LOWER)
 				.set(3, ALPHABETIC_UPPER)
@@ -874,6 +914,7 @@ public final class RecData_X0024_ParseTree extends RecData {
 		
 		static final Decoder<Integer, NodeSubtype> decoder11 =
 				new ReversibleMap<Integer, NodeSubtype>()
+				.set(0, NONE)
 				.set(1, TRUE_11)
 				.set(2, FALSE)
 				.set(3, ANY)
@@ -882,6 +923,7 @@ public final class RecData_X0024_ParseTree extends RecData {
 		
 		static final Decoder<Integer, NodeSubtype> decoder12 =
 				new ReversibleMap<Integer, NodeSubtype>()
+				.set(0, NONE)
 				.set(1, REFERENCED)
 				.set(2, CHANGED)
 				.set(3, REFERENCED_CHANGED)
@@ -889,6 +931,7 @@ public final class RecData_X0024_ParseTree extends RecData {
 		
 		static final Decoder<Integer, NodeSubtype> decoder13 =
 				new ReversibleMap<Integer, NodeSubtype>()
+				.set(0, NONE)
 				.set(1, ALPHABETIC_13)
 				.set(2, ALPHANUMERIC)
 				.set(3, NUMERIC_13)
@@ -901,12 +944,14 @@ public final class RecData_X0024_ParseTree extends RecData {
 		
 		static final Decoder<Integer, NodeSubtype> decoder14 =
 				new ReversibleMap<Integer, NodeSubtype>()
+				.set(0, NONE)
 				.set(1, SECTION)
 				.set(2, PARAGRAPH)
 				;
 		
 		static final Decoder<Integer, NodeSubtype> decoder15 =
 				new ReversibleMap<Integer, NodeSubtype>()
+				.set(0, NONE)
 				.set(1, ROUNDED)
 				.set(2, TRUE_15)
 				.set(3, ON)
@@ -931,6 +976,7 @@ public final class RecData_X0024_ParseTree extends RecData {
 		
 		static final Decoder<Integer, NodeSubtype> decoder16 =
 				new ReversibleMap<Integer, NodeSubtype>()
+				.set(0, NONE)
 				.set(1, PLUS)
 				.set(2, MINUS)
 				.set(3, TIMES)
@@ -942,6 +988,7 @@ public final class RecData_X0024_ParseTree extends RecData {
 		
 		static final Decoder<Integer, NodeSubtype> decoder17 =
 				new ReversibleMap<Integer, NodeSubtype>()
+				.set(0, NONE)
 				.set(8, LESS)
 				.set(9, LESS_OR_EQUAL)
 				.set(10, EQUAL)
