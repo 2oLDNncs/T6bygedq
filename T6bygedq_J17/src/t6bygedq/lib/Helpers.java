@@ -7,6 +7,7 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * @author 2oLDNncs 20241228
@@ -61,6 +62,12 @@ public final class Helpers {
 	}
 	
 	public static final long getNum(final byte[] bytes, final int offset, final int length, final boolean littleEndian) {
+		Objects.checkFromIndexSize(offset, length, bytes.length);
+		
+		if (0 == length) {
+			new Exception(String.format("Warning: 0-length range starting at %s of %s", offset, bytes.length)).printStackTrace();
+		}
+		
 		var result = 0L;
 		
 		if (littleEndian) {

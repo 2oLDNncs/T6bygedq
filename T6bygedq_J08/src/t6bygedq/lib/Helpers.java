@@ -60,7 +60,21 @@ public final class Helpers {
 		}
 	}
 	
+    private static final int checkFromIndexSize(final int fromIndex, final int size, final int length) {
+        if ((length | fromIndex | size) < 0 || length - fromIndex < size) {
+        	throw new IndexOutOfBoundsException(String.format("%s %s %s", fromIndex, size, length));
+        }
+        
+        return fromIndex;
+	}
+	
 	public static final long getNum(final byte[] bytes, final int offset, final int length, final boolean littleEndian) {
+		checkFromIndexSize(offset, length, bytes.length);
+		
+		if (0 == length) {
+			new Exception(String.format("Warning: 0-length range starting at %s of %s", offset, bytes.length)).printStackTrace();
+		}
+		
 		long result = 0L;
 		
 		if (littleEndian) {
