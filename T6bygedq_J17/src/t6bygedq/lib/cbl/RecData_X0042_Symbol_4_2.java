@@ -30,7 +30,28 @@ public final class RecData_X0042_Symbol_4_2 extends RecData {
 	public final BooleanVar                         vSameRecodArea             = this.newBooleanVar(CLAUSES, 4);
 	public final BooleanVar                         vRecordingMode             = this.newBooleanVar(CLAUSES, 5);
 	public final BooleanVar                         vRecord                    = this.newBooleanVar(CLAUSES, 7);
-	public final EnumVar<MnemonicNameSymbolClauses> vMnemonicNameSymbolClauses = this.newEnumVar(CLAUSES, MnemonicNameSymbolClauses.decoder);
+//	public final EnumVar<MnemonicNameSymbolClauses> vMnemonicNameSymbolClauses = this.newEnumVar(CLAUSES, MnemonicNameSymbolClauses.decoder);
+	public final EnumVar<MnemonicNameSymbolClauses> vMnemonicNameSymbolClauses = this.newEnumVar(CLAUSES, new Decoder<Integer, MnemonicNameSymbolClauses>() {
+		
+		@Override
+		public final MnemonicNameSymbolClauses get(final Integer key) {
+			if (SymbolType.MNEMONIC_NAME.equals(vSymbolType.get())) {
+				return MnemonicNameSymbolClauses.decoder.get(key);
+			}
+			
+			return MnemonicNameSymbolClauses.NONE;
+		}
+		
+		@Override
+		public final Integer getKey(final MnemonicNameSymbolClauses value) {
+			if (SymbolType.MNEMONIC_NAME.equals(vSymbolType.get())) {
+				return MnemonicNameSymbolClauses.decoder.getKey(value);
+			}
+			
+			return 0;
+		}
+		
+	});
 	public final BooleanVar                         vRedefined                 = this.newBooleanVar(DATA_FLAGS_1, 0);
 	public final BooleanVar                         vRenamed                   = this.newBooleanVar(DATA_FLAGS_1, 1);
 	public final BooleanVar                         vSynchronized              = this.newBooleanVar(DATA_FLAGS_1, 2);
@@ -207,7 +228,7 @@ public final class RecData_X0042_Symbol_4_2 extends RecData {
 	private static final Buffer.Region USAGE_CLAUSE                                       = staticRegionGenerator.newFixedLength(1);
 	private static final Buffer.Region SIGN_CLAUSE                                        = staticRegionGenerator.newFixedLength(1);
 	private static final Buffer.Region INDICATORS                                         = staticRegionGenerator.newFixedLength(1);
-	private static final Buffer.Region SIZE                                               = staticRegionGenerator.newFixedLength(1);
+	private static final Buffer.Region SIZE                                               = staticRegionGenerator.newFixedLength(4);
 	private static final Buffer.Region PRECISION                                          = staticRegionGenerator.newFixedLength(1);
 	private static final Buffer.Region SCALE                                              = staticRegionGenerator.newFixedLength(1);
 	private static final Buffer.Region STORAGE_TYPE                                       = staticRegionGenerator.newFixedLength(1);
@@ -332,6 +353,7 @@ public final class RecData_X0042_Symbol_4_2 extends RecData {
 	 */
 	public static enum MnemonicNameSymbolClauses {
 		
+		NONE,
 		CSP,
 		C01,
 		C02,
