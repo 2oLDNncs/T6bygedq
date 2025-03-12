@@ -208,6 +208,8 @@ public final class ParseSysadata {
 				rd.vSymbolAttribute.set(RecData_X0042_Symbol_6_1.SymbolAttribute.NUMERIC);
 //				rd.vMnemonicNameSymbolClauses.set(RecData_Symbol.MnemonicNameSymbolClauses.C01);
 				
+				rd.vSymbolName.set("Symbol01");
+				
 				rec.write(out);
 			}
 			

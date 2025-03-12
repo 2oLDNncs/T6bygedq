@@ -75,6 +75,10 @@ public final class ArgsParser {
 		return this.get(key);
 	}
 	
+	public final boolean isBlank(final String key) {
+		return this.getString(key).trim().isEmpty();
+	}
+	
 	private final void parse() {
 		if (null == this.args) {
 			return;
