@@ -201,13 +201,23 @@ public final class RecData_X0042_Symbol_4_2 extends RecData {
 	/**
 	 * @author 2oLDNncs 20250214
 	 */
-	public final class Pair {
+	public final class Pair extends RecPart {
 		
-		private final Buffer.Region firstValueLength = newDynamicFixedLengthRegion(2);
-		public final StringVar firstValue  = newStringVarV(this.firstValueLength);
+		private final Buffer.Region firstValueLength;
+		public final StringVar firstValue;
+		private final Buffer.Region secondValueLength;
+		public final StringVar secondValue;
 		
-		private final Buffer.Region secondValueLength = newDynamicFixedLengthRegion(2);
-		public final StringVar secondValue = newStringVarV(this.secondValueLength);
+		Pair(final Buffer.Region.Generator rg) {
+			super(RecData_X0042_Symbol_4_2.this.buffer);
+			Buffer.DEBUG = false;
+			this.setDynamicRegionGenerator(rg);
+			this.firstValueLength = this.newDynamicFixedLengthRegion(2);
+			this.firstValue  = this.newStringVarV(this.firstValueLength);
+			this.secondValueLength = this.newDynamicFixedLengthRegion(2);
+			this.secondValue = this.newStringVarV(this.secondValueLength);
+			Buffer.DEBUG = false;
+		}
 		
 	}
 	

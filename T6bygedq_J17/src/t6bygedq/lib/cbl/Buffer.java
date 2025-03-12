@@ -2,6 +2,7 @@ package t6bygedq.lib.cbl;
 
 import java.io.IOException;
 import java.io.OutputStream;
+import java.io.PrintStream;
 import java.nio.charset.Charset;
 import java.util.Arrays;
 import java.util.function.IntSupplier;
@@ -174,14 +175,28 @@ public final class Buffer {
 		out.write(this.bytes);
 	}
 	
+	public static boolean DEBUG = false;
+	
 	public static final Charset EBCDIC = Charset.forName("Cp500");
 	
 	public static final byte SPACE = EBCDIC.encode(" ").get();
 	
 	/**
+	 * @author 2oLDNncs 20250312
+	 */
+	public static abstract interface DebugStructure {
+		
+		public default void debugStructure(final PrintStream out, final String indent) {
+			out.println(String.format("%s%s %X",
+					indent, this.getClass().getSimpleName(), this.hashCode()));
+		}
+		
+	}
+	
+	/**
 	 * @author 2oLDNncs 20250206
 	 */
-	public static final class Region {
+	public static final class Region implements DebugStructure {
 		
 		private final Offset offset;
 		
@@ -193,6 +208,14 @@ public final class Buffer {
 			this.offset = offset;
 			this.length = length;
 		}
+		
+		@Override
+		public final void debugStructure(final PrintStream out, final String indent) {
+			DebugStructure.super.debugStructure(out, indent);
+			this.offset.debugStructure(out, indent + "\t");
+			this.length.debugStructure(out, indent + "\t");
+		}
+		
 		public final ModClock spawnModClock() {
 			if (this.offset instanceof RelativeOffset) {
 				return ((RelativeOffset) this.offset).spawnModClock();
@@ -256,6 +279,11 @@ public final class Buffer {
 			private Region last;
 			
 			public final int getTotalLength() {
+				if (DEBUG) {
+					System.out.println(Helpers.dformat("this.last.debugStructure"));
+					this.last.debugStructure(System.out, "");
+				}
+				
 				return getNextOffset(this.last);
 			}
 			
@@ -336,7 +364,7 @@ public final class Buffer {
 		/**
 		 * @author 2oLDNncs 20250206
 		 */
-		private static abstract interface Offset extends IntSupplier {
+		private static abstract interface Offset extends IntSupplier, DebugStructure {
 			//pass
 		}
 		
@@ -347,6 +375,12 @@ public final class Buffer {
 			
 			AbsoluteOffset(final int value) {
 				super(value);
+			}
+			
+			@Override
+			public final void debugStructure(final PrintStream out, final String indent) {
+				out.println(String.format("%s%s(%s) %X",
+						indent, this.getClass().getSimpleName(), this.getAsInt(), this.hashCode()));
 			}
 			
 		}
@@ -378,12 +412,18 @@ public final class Buffer {
 				return this.cachedValue;
 			}
 			
+			@Override
+			public final void debugStructure(final PrintStream out, final String indent) {
+				Offset.super.debugStructure(out, indent);
+				this.target.debugStructure(out, indent + "\t");
+			}
+			
 		}
 		
 		/**
 		 * @author 2oLDNncs 20250206
 		 */
-		private static abstract interface Length extends IntSupplier {
+		private static abstract interface Length extends IntSupplier, DebugStructure {
 			//pass
 		}
 		
@@ -394,6 +434,12 @@ public final class Buffer {
 			
 			FixedLength(final int value) {
 				super(value);
+			}
+			
+			@Override
+			public final void debugStructure(final PrintStream out, final String indent) {
+				out.println(String.format("%s%s(%s) %X",
+						indent, this.getClass().getSimpleName(), this.getAsInt(), this.hashCode()));
 			}
 			
 		}
@@ -433,6 +479,13 @@ public final class Buffer {
 				}
 				
 				return this.cachedValue;
+			}
+			
+			@Override
+			public final void debugStructure(final PrintStream out, final String indent) {
+				out.println(String.format("%s%s(. * %s) %X",
+						indent, this.getClass().getSimpleName(), this.elementLength, this.hashCode()));
+				this.target.debugStructure(out, indent + "\t");
 			}
 			
 		}

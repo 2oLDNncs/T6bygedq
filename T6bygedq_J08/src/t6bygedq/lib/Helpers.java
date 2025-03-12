@@ -113,6 +113,10 @@ public final class Helpers {
 	}
 	
 	public static final String dformat(final String format, final Object... args) {
+		return dformat(2, format, args);
+	}
+	
+	public static final String dformat(final int stackLevel, final String format, final Object... args) {
 		final StackTraceElement[] stackTrace = Thread.currentThread().getStackTrace();
 		final StackTraceElement callerSte = stackTrace[3];
 		
@@ -134,7 +138,7 @@ public final class Helpers {
 				
 				if (null != debug) {
 					if (debug.value()) {
-						System.out.println(dformat(format, args));
+						System.out.println(dformat(3, format, args));
 					}
 					
 					break;

@@ -8,6 +8,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.function.Function;
 import java.util.function.Supplier;
 
 import t6bygedq.lib.Helpers;
@@ -68,10 +69,14 @@ public abstract class RecPart {
 	
 	private final Buffer.Region.Generator getDynamicRegionGenerator() {
 		if (this.isStaticRegionGenerator()) {
-			this.dynamicRegionGenerator = getStaticRegionGenerator(this.getClass()).clone();
+			this.setDynamicRegionGenerator(getStaticRegionGenerator(this.getClass()).clone());
 		}
 		
 		return this.dynamicRegionGenerator;
+	}
+	
+	protected final void setDynamicRegionGenerator(final Buffer.Region.Generator dynamicRegionGenerator) {
+		this.dynamicRegionGenerator = dynamicRegionGenerator;
 	}
 	
 	protected final Buffer.Region.Generator cloneDynamicRegionGenerator() {
@@ -186,24 +191,28 @@ public abstract class RecPart {
 		};
 	}
 	
-	protected final <E> ListVar_<E> newListVarV2(final Buffer.Region length, final Supplier<E> newElement) {
+	protected final <E> ListVar_<E> newListVarV2(final Buffer.Region length, final Function<Buffer.Region.Generator, E> newElement) {
+		System.out.println(Helpers.dformat("length.debugStructure"));
+		length.debugStructure(System.out, "");
+		
 		final Buffer.Region.Generator rg = this.getDynamicRegionGenerator().clone();
 		
 		return new ListVar_<E>() {
 			
 			private final IntVar vLength = newIntVar(length);
 			
-			private int currentLength;
+			private int currentLength = 0;
 			
 			@Override
 			protected final boolean newElementNeeded() {
+				System.out.println(Helpers.dformat("%s %s", this.currentLength, this.vLength.get()));
 				return this.currentLength < this.vLength.get();
 			}
 			
 			@Override
 			protected final E newElement() {
 				final int rgLength = rg.getTotalLength();
-				final E result = newElement.get();
+				final E result = newElement.apply(rg);
 				this.currentLength += rg.getTotalLength() - rgLength;
 				
 				return result;
@@ -332,6 +341,11 @@ public abstract class RecPart {
 	}
 	
 	protected final StringVar newStringVarF(final Buffer.Region region) {
+		if (Buffer.DEBUG) {
+			System.out.println(Helpers.dformat("region.debugStructure"));
+			region.debugStructure(System.out, "");
+		}
+		
 		return new StringVar() {
 			
 			@Override
