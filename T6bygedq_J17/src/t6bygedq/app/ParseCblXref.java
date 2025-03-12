@@ -223,11 +223,16 @@ public final class ParseCblXref {
 			final PrintStream opsOut, final PrintStream flowsOut) throws IOException {
 		dprintlnf("Processing %s...", filePath);
 		
-		processModule(filePath, ops, flows);
+		final var newOps = new ArrayList<List<Object>>();
+		final var newFlows = new ArrayList<List<Object>>();
 		
-		printTabbedData(ops, opsOut);
+		processModule(filePath, newOps, newFlows);
 		
-		printTabbedData(flows, flowsOut);
+		ops.addAll(newOps);
+		flows.addAll(newFlows);
+		
+		printTabbedData(newOps, opsOut);
+		printTabbedData(newFlows, flowsOut);
 		
 		dprintlnf("Processing %s... Done", filePath);
 	}
