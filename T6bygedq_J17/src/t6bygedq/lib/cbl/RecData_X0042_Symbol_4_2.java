@@ -555,6 +555,7 @@ public final class RecData_X0042_Symbol_4_2 extends RecData {
 	 */
 	public static enum DateFormat {
 		
+		NONE,
 		YY,
 		YYXX,
 		YYXXXX,
@@ -577,6 +578,7 @@ public final class RecData_X0042_Symbol_4_2 extends RecData {
 		
 		static final Decoder<Integer, DateFormat> decoder =
 				new ReversibleMap<Integer, DateFormat>()
+				.set( 0, NONE)
 				.set( 1, YY)
 				.set( 2, YYXX)
 				.set( 3, YYXXXX)

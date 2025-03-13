@@ -29,8 +29,8 @@ public final class RecData_X0020_ExternalSymbol extends RecData {
 	private static final Buffer.Region SECTION_LENGTH            = staticRegionGenerator.newFixedLength(4);
 	private static final Buffer.Region LD_ID                     = staticRegionGenerator.newFixedLength(4);
 	private static final Buffer.Region RESERVED_02               = staticRegionGenerator.newFixedLength(8);
-	private static final Buffer.Region EXTERNAL_NAME_LENGTH      = staticRegionGenerator.newFixedLength(4);
-	private static final Buffer.Region ALIAS_SECTION_NAME_LENGTH = staticRegionGenerator.newFixedLength(4);
+	private static final Buffer.Region EXTERNAL_NAME_LENGTH      = staticRegionGenerator.newFixedLength(2);
+	private static final Buffer.Region ALIAS_SECTION_NAME_LENGTH = staticRegionGenerator.newFixedLength(2);
 	
 	static {
 		Helpers.ignore(FLAGS);

@@ -23,31 +23,31 @@ public final class RecData_X0120_Events extends RecData {
 		return this.getEvent();
 	}
 	
-	public final Timestamp setEventProcessor() {
+	public final Processor setEventProcessor() {
 		this.event = this.new Processor();
 		
 		return this.getEvent();
 	}
 	
-	public final Timestamp setEventFileEnd() {
+	public final FileEnd setEventFileEnd() {
 		this.event = this.new FileEnd();
 		
 		return this.getEvent();
 	}
 	
-	public final Timestamp setEventProgram() {
+	public final Program setEventProgram() {
 		this.event = this.new Program();
 		
 		return this.getEvent();
 	}
 	
-	public final Timestamp setEventFileId() {
+	public final FileId setEventFileId() {
 		this.event = this.new FileId();
 		
 		return this.getEvent();
 	}
 	
-	public final Timestamp setEventError() {
+	public final Error setEventError() {
 		this.event = this.new Error();
 		
 		return this.getEvent();
@@ -59,29 +59,27 @@ public final class RecData_X0120_Events extends RecData {
 		
 		final StringVar vRectypePrefix = this.newStringVarF(RECTYPE_PREFIX);
 		
-		if (false) {
-			switch (vRectypePrefix.get()) {
-			case "TIMES":
-				this.setEventTimestamp().afterRead();
-				break;
-			case "PROCE":
-				this.setEventProcessor().afterRead();
-				break;
-			case "FILEE":
-				this.setEventFileEnd().afterRead();
-				break;
-			case "PROGR":
-				this.setEventProgram().afterRead();
-				break;
-			case "FILEI":
-				this.setEventFileId().afterRead();
-				break;
-			case "ERROR":
-				this.setEventError().afterRead();
-				break;
-			default:
-				throw new IllegalStateException(String.format("Unknown Event Record Type Prefix: %s", vRectypePrefix.get()));
-			}
+		switch (vRectypePrefix.get()) {
+		case "TIMES":
+			this.setEventTimestamp().afterRead();
+			break;
+		case "PROCE":
+			this.setEventProcessor().afterRead();
+			break;
+		case "FILEE":
+			this.setEventFileEnd().afterRead();
+			break;
+		case "PROGR":
+			this.setEventProgram().afterRead();
+			break;
+		case "FILEI":
+			this.setEventFileId().afterRead();
+			break;
+		case "ERROR":
+			this.setEventError().afterRead();
+			break;
+		default:
+			throw new IllegalStateException(String.format("Unknown Event Record Type Prefix: %s", vRectypePrefix.get()));
 		}
 	}
 	
@@ -148,6 +146,7 @@ public final class RecData_X0120_Events extends RecData {
 		@Override
 		protected final void afterRead() {
 			this.checkRecordType(S_RECORD_TYPE);
+			super.afterRead();
 		}
 		
 		@Override
@@ -158,7 +157,7 @@ public final class RecData_X0120_Events extends RecData {
 		
 	}
 	
-	public static final String S_RECORD_TYPE = "PROCESSOR";
+	public static final String S_RECORD_TYPE = "TIMESTAMP";
 	
 	/**
 	 * @author 2oLDNncs 20250213
@@ -168,7 +167,7 @@ public final class RecData_X0120_Events extends RecData {
 		private static final Buffer.Region.Generator staticRegionGenerator =
 				getStaticRegionGenerator(RecData_X0120_Events.Timestamp.class, RecData_X0120_Events.staticRegionGenerator);
 		
-		static final Buffer.Region RECORD_TYPE    = staticRegionGenerator.newFixedLength(12);
+		static final Buffer.Region RECORD_TYPE    = staticRegionGenerator.newFixedLength(S_RECORD_TYPE.length());
 		static final Buffer.Region BLANK_01       = staticRegionGenerator.newFixedLength(1);
 		static final Buffer.Region REVISION_LEVEL = staticRegionGenerator.newFixedLength(1);
 		static final Buffer.Region BLANK_02       = staticRegionGenerator.newFixedLength(1);
@@ -195,6 +194,7 @@ public final class RecData_X0120_Events extends RecData {
 		@Override
 		protected final void afterRead() {
 			this.checkRecordType(S_RECORD_TYPE);
+			super.afterRead();
 		}
 		
 		@Override
@@ -214,9 +214,9 @@ public final class RecData_X0120_Events extends RecData {
 	static final class Event_Static {
 		
 		private static final Buffer.Region.Generator staticRegionGenerator =
-				getStaticRegionGenerator(RecData_X0120_Events.Timestamp.class, RecData_X0120_Events.staticRegionGenerator);
+				getStaticRegionGenerator(RecData_X0120_Events.Processor.class, RecData_X0120_Events.staticRegionGenerator);
 		
-		static final Buffer.Region RECORD_TYPE          = staticRegionGenerator.newFixedLength(9);
+		static final Buffer.Region RECORD_TYPE          = staticRegionGenerator.newFixedLength(S_RECORD_TYPE.length());
 		static final Buffer.Region BLANK_01             = staticRegionGenerator.newFixedLength(1);
 		static final Buffer.Region REVISION_LEVEL       = staticRegionGenerator.newFixedLength(1);
 		static final Buffer.Region BLANK_02             = staticRegionGenerator.newFixedLength(1);
@@ -242,6 +242,7 @@ public final class RecData_X0120_Events extends RecData {
 		@Override
 		protected final void afterRead() {
 			this.checkRecordType(S_RECORD_TYPE);
+			super.afterRead();
 		}
 		
 		@Override
@@ -261,9 +262,9 @@ public final class RecData_X0120_Events extends RecData {
 	static final class FileEnd_Static {
 		
 		private static final Buffer.Region.Generator staticRegionGenerator =
-				getStaticRegionGenerator(RecData_X0120_Events.Timestamp.class, RecData_X0120_Events.staticRegionGenerator);
+				getStaticRegionGenerator(RecData_X0120_Events.FileEnd.class, RecData_X0120_Events.staticRegionGenerator);
 		
-		static final Buffer.Region RECORD_TYPE         = staticRegionGenerator.newFixedLength(9);
+		static final Buffer.Region RECORD_TYPE         = staticRegionGenerator.newFixedLength(S_RECORD_TYPE.length());
 		static final Buffer.Region BLANK_01            = staticRegionGenerator.newFixedLength(1);
 		static final Buffer.Region REVISION_LEVEL      = staticRegionGenerator.newFixedLength(1);
 		static final Buffer.Region BLANK_02            = staticRegionGenerator.newFixedLength(1);
@@ -279,8 +280,10 @@ public final class RecData_X0120_Events extends RecData {
 	public final class Program extends Event {
 		
 		public final IntVar     vOutputFileId             = this.newIntVar(Program_Static.OUTPUT_FILE_ID);
-		private final StringVar vBlank03                  = this.newStringVarF(Program_Static.BLANK_03);
-		public final IntVar     vProgramInputRecordNumber = this.newIntVar(Program_Static.PROGRAM_INPUT_RECORD_NUMBER);
+
+		// Optional?
+//		private final StringVar vBlank03                  = this.newStringVarF(Program_Static.BLANK_03);
+//		public final IntVar     vProgramInputRecordNumber = this.newIntVar(Program_Static.PROGRAM_INPUT_RECORD_NUMBER);
 		
 		Program() {
 			super(Program_Static.RECORD_TYPE, Program_Static.BLANK_01, Program_Static.REVISION_LEVEL, Program_Static.BLANK_02);
@@ -289,13 +292,14 @@ public final class RecData_X0120_Events extends RecData {
 		@Override
 		protected final void afterRead() {
 			this.checkRecordType(S_RECORD_TYPE);
+			super.afterRead();
 		}
 		
 		@Override
 		protected final void beforeWrite() {
 			super.beforeWrite();
 			this.vRecordType.set(S_RECORD_TYPE);
-			this.vBlank03.set(" ");
+//			this.vBlank03.set(" ");
 		}
 		
 		public static final String S_RECORD_TYPE = "PROGRAM";
@@ -308,15 +312,17 @@ public final class RecData_X0120_Events extends RecData {
 	static final class Program_Static {
 		
 		private static final Buffer.Region.Generator staticRegionGenerator =
-				getStaticRegionGenerator(RecData_X0120_Events.Timestamp.class, RecData_X0120_Events.staticRegionGenerator);
+				getStaticRegionGenerator(RecData_X0120_Events.Program.class, RecData_X0120_Events.staticRegionGenerator);
 		
-		static final Buffer.Region RECORD_TYPE                 = staticRegionGenerator.newFixedLength(9);
+		static final Buffer.Region RECORD_TYPE                 = staticRegionGenerator.newFixedLength(S_RECORD_TYPE.length());
 		static final Buffer.Region BLANK_01                    = staticRegionGenerator.newFixedLength(1);
 		static final Buffer.Region REVISION_LEVEL              = staticRegionGenerator.newFixedLength(1);
 		static final Buffer.Region BLANK_02                    = staticRegionGenerator.newFixedLength(1);
 		static final Buffer.Region OUTPUT_FILE_ID              = staticRegionGenerator.newFixedLength(1);
-		static final Buffer.Region BLANK_03                    = staticRegionGenerator.newFixedLength(1);
-		static final Buffer.Region PROGRAM_INPUT_RECORD_NUMBER = staticRegionGenerator.newFixedLength(1);
+		
+		// Optional?
+//		static final Buffer.Region BLANK_03                    = staticRegionGenerator.newFixedLength(1);
+//		static final Buffer.Region PROGRAM_INPUT_RECORD_NUMBER = staticRegionGenerator.newFixedLength(1);
 		
 	}
 	
@@ -339,6 +345,7 @@ public final class RecData_X0120_Events extends RecData {
 		@Override
 		protected final void afterRead() {
 			this.checkRecordType(S_RECORD_TYPE);
+			super.afterRead();
 		}
 		
 		@Override
@@ -359,9 +366,9 @@ public final class RecData_X0120_Events extends RecData {
 	static final class FileId_Static {
 		
 		private static final Buffer.Region.Generator staticRegionGenerator =
-				getStaticRegionGenerator(RecData_X0120_Events.Timestamp.class, RecData_X0120_Events.staticRegionGenerator);
+				getStaticRegionGenerator(RecData_X0120_Events.FileId.class, RecData_X0120_Events.staticRegionGenerator);
 		
-		static final Buffer.Region RECORD_TYPE                 = staticRegionGenerator.newFixedLength(9);
+		static final Buffer.Region RECORD_TYPE                 = staticRegionGenerator.newFixedLength(S_RECORD_TYPE.length());
 		static final Buffer.Region BLANK_01                    = staticRegionGenerator.newFixedLength(1);
 		static final Buffer.Region REVISION_LEVEL              = staticRegionGenerator.newFixedLength(1);
 		static final Buffer.Region BLANK_02                    = staticRegionGenerator.newFixedLength(1);
@@ -386,17 +393,19 @@ public final class RecData_X0120_Events extends RecData {
 		private final StringVar vBlank05                         = this.newStringVarF(Error_Static.BLANK_05);
 		public final IntVar     vErrorStartLineNumber            = this.newIntVar(Error_Static.ERROR_START_LINE_NUMBER);
 		private final StringVar vBlank06                         = this.newStringVarF(Error_Static.BLANK_06);
-		public final IntVar     vErrorEndLineNumber              = this.newIntVar(Error_Static.ERROR_END_LINE_NUMBER);
+		public final IntVar     vErrorTokenStartNumber           = this.newIntVar(Error_Static.ERROR_TOKEN_START_NUMBER);
 		private final StringVar vBlank07                         = this.newStringVarF(Error_Static.BLANK_07);
-		public final IntVar     vErrorTokenEndNumber             = this.newIntVar(Error_Static.ERROR_TOKEN_END_NUMBER);
+		public final IntVar     vErrorEndLineNumber              = this.newIntVar(Error_Static.ERROR_END_LINE_NUMBER);
 		private final StringVar vBlank08                         = this.newStringVarF(Error_Static.BLANK_08);
-		public final IntVar     vErrorMessageIdNumber            = this.newIntVar(Error_Static.ERROR_MESSAGE_ID_NUMBER);
+		public final IntVar     vErrorTokenEndNumber             = this.newIntVar(Error_Static.ERROR_TOKEN_END_NUMBER);
 		private final StringVar vBlank09                         = this.newStringVarF(Error_Static.BLANK_09);
-		public final IntVar     vErrorMessageSeverityCode        = this.newIntVar(Error_Static.ERROR_MESSAGE_SEVERITY_CODE);
+		public final IntVar     vErrorMessageIdNumber            = this.newIntVar(Error_Static.ERROR_MESSAGE_ID_NUMBER);
 		private final StringVar vBlank10                         = this.newStringVarF(Error_Static.BLANK_10);
-		public final IntVar     vErrorMessageSeverityLevelNumber = this.newIntVar(Error_Static.ERROR_MESSAGE_SEVERITY_LEVEL_NUMBER);
+		public final IntVar     vErrorMessageSeverityCode        = this.newIntVar(Error_Static.ERROR_MESSAGE_SEVERITY_CODE);
 		private final StringVar vBlank11                         = this.newStringVarF(Error_Static.BLANK_11);
+		public final IntVar     vErrorMessageSeverityLevelNumber = this.newIntVar(Error_Static.ERROR_MESSAGE_SEVERITY_LEVEL_NUMBER);
 		private final StringVar vBlank12                         = this.newStringVarF(Error_Static.BLANK_12);
+		private final StringVar vBlank13                         = this.newStringVarF(Error_Static.BLANK_13);
 		
 		public final StringVar  vErrorMessage                    = this.newStringVarV(Error_Static.ERROR_MESSAGE_LENGTH);
 		
@@ -407,6 +416,7 @@ public final class RecData_X0120_Events extends RecData {
 		@Override
 		protected final void afterRead() {
 			this.checkRecordType(S_RECORD_TYPE);
+			super.afterRead();
 		}
 		
 		@Override
@@ -423,6 +433,7 @@ public final class RecData_X0120_Events extends RecData {
 			this.vBlank10.set(" ");
 			this.vBlank11.set(" ");
 			this.vBlank12.set(" ");
+			this.vBlank13.set(" ");
 		}
 		
 		public static final String S_RECORD_TYPE = "ERROR";
@@ -435,9 +446,9 @@ public final class RecData_X0120_Events extends RecData {
 	static final class Error_Static {
 		
 		private static final Buffer.Region.Generator staticRegionGenerator =
-				getStaticRegionGenerator(RecData_X0120_Events.Timestamp.class, RecData_X0120_Events.staticRegionGenerator);
+				getStaticRegionGenerator(RecData_X0120_Events.Error.class, RecData_X0120_Events.staticRegionGenerator);
 		
-		static final Buffer.Region RECORD_TYPE                         = staticRegionGenerator.newFixedLength(9);
+		static final Buffer.Region RECORD_TYPE                         = staticRegionGenerator.newFixedLength(S_RECORD_TYPE.length());
 		static final Buffer.Region BLANK_01                            = staticRegionGenerator.newFixedLength(1);
 		static final Buffer.Region REVISION_LEVEL                      = staticRegionGenerator.newFixedLength(1);
 		static final Buffer.Region BLANK_02                            = staticRegionGenerator.newFixedLength(1);
@@ -445,22 +456,24 @@ public final class RecData_X0120_Events extends RecData {
 		static final Buffer.Region BLANK_03                            = staticRegionGenerator.newFixedLength(1);
 		static final Buffer.Region ANNOT_CLASS                         = staticRegionGenerator.newFixedLength(1);
 		static final Buffer.Region BLANK_04                            = staticRegionGenerator.newFixedLength(1);
-		static final Buffer.Region ERROR_INPUT_RECORD_NUMBER           = staticRegionGenerator.newFixedLength(10);
+		static final Buffer.Region ERROR_INPUT_RECORD_NUMBER           = staticRegionGenerator.newFixedLength(10).setNumberFormat(Buffer.Region.NumberFormat.TEXT_DECIMAL);
 		static final Buffer.Region BLANK_05                            = staticRegionGenerator.newFixedLength(1);
-		static final Buffer.Region ERROR_START_LINE_NUMBER             = staticRegionGenerator.newFixedLength(10);
+		static final Buffer.Region ERROR_START_LINE_NUMBER             = staticRegionGenerator.newFixedLength(10).setNumberFormat(Buffer.Region.NumberFormat.TEXT_DECIMAL);
 		static final Buffer.Region BLANK_06                            = staticRegionGenerator.newFixedLength(1);
-		static final Buffer.Region ERROR_END_LINE_NUMBER               = staticRegionGenerator.newFixedLength(10);
+		static final Buffer.Region ERROR_TOKEN_START_NUMBER            = staticRegionGenerator.newFixedLength(1).setNumberFormat(Buffer.Region.NumberFormat.TEXT_DECIMAL);
 		static final Buffer.Region BLANK_07                            = staticRegionGenerator.newFixedLength(1);
-		static final Buffer.Region ERROR_TOKEN_END_NUMBER              = staticRegionGenerator.newFixedLength(1);
+		static final Buffer.Region ERROR_END_LINE_NUMBER               = staticRegionGenerator.newFixedLength(10).setNumberFormat(Buffer.Region.NumberFormat.TEXT_DECIMAL);
 		static final Buffer.Region BLANK_08                            = staticRegionGenerator.newFixedLength(1);
-		static final Buffer.Region ERROR_MESSAGE_ID_NUMBER             = staticRegionGenerator.newFixedLength(9);
+		static final Buffer.Region ERROR_TOKEN_END_NUMBER              = staticRegionGenerator.newFixedLength(1).setNumberFormat(Buffer.Region.NumberFormat.TEXT_DECIMAL);
 		static final Buffer.Region BLANK_09                            = staticRegionGenerator.newFixedLength(1);
-		static final Buffer.Region ERROR_MESSAGE_SEVERITY_CODE         = staticRegionGenerator.newFixedLength(1);
+		static final Buffer.Region ERROR_MESSAGE_ID_NUMBER             = staticRegionGenerator.newFixedLength(9).setNumberFormat(Buffer.Region.NumberFormat.TEXT_DECIMAL);
 		static final Buffer.Region BLANK_10                            = staticRegionGenerator.newFixedLength(1);
-		static final Buffer.Region ERROR_MESSAGE_SEVERITY_LEVEL_NUMBER = staticRegionGenerator.newFixedLength(2);
+		static final Buffer.Region ERROR_MESSAGE_SEVERITY_CODE         = staticRegionGenerator.newFixedLength(1).setNumberFormat(Buffer.Region.NumberFormat.TEXT_DECIMAL);
 		static final Buffer.Region BLANK_11                            = staticRegionGenerator.newFixedLength(1);
-		static final Buffer.Region ERROR_MESSAGE_LENGTH                = staticRegionGenerator.newFixedLength(3).setNumberFormat(Buffer.Region.NumberFormat.TEXT_DECIMAL);
+		static final Buffer.Region ERROR_MESSAGE_SEVERITY_LEVEL_NUMBER = staticRegionGenerator.newFixedLength(2).setNumberFormat(Buffer.Region.NumberFormat.TEXT_DECIMAL);
 		static final Buffer.Region BLANK_12                            = staticRegionGenerator.newFixedLength(1);
+		static final Buffer.Region ERROR_MESSAGE_LENGTH                = staticRegionGenerator.newFixedLength(3).setNumberFormat(Buffer.Region.NumberFormat.TEXT_DECIMAL);
+		static final Buffer.Region BLANK_13                            = staticRegionGenerator.newFixedLength(1);
 		
 	}
 	
