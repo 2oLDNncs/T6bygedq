@@ -94,7 +94,7 @@ public final class Buffer {
 	
 	final void insertBytes(final int offset, final int length) {
 		if ((long) this.getLengthLimit() < (long) offset + length) {
-			throw new IllegalStateException();
+			throw new IllegalStateException(String.format("%s < %s + %s", this.getLengthLimit(), offset, length));
 		}
 		
 		final byte[] newBytes = new byte[this.bytes.length + length];
@@ -107,6 +107,8 @@ public final class Buffer {
 	}
 	
 	public final String getStr(final int offset, final int length) {
+		Helpers.checkFromIndexSize(offset, length, this.bytes.length);
+		
 		return new String(this.bytes, offset, length, EBCDIC);
 	}
 	

@@ -1,5 +1,7 @@
 package t6bygedq.lib;
 
+import java.io.FileNotFoundException;
+import java.io.PrintStream;
 import java.lang.annotation.Annotation;
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
@@ -50,6 +52,12 @@ public final class Helpers {
 	}
 	
 	public static final void setNum(final byte[] bytes, final int offset, final int length, final boolean littleEndian, final long value) {
+		checkFromIndexSize(offset, length, bytes.length);
+		
+		if (0 == length) {
+			new Exception(String.format("Warning: empty range starting at %s of %s", offset, bytes.length)).printStackTrace();
+		}
+		
 		if (littleEndian) {
 			for (var i = 0; i < length; i += 1) {
 				bytes[offset + i] = (byte) (value >> (8 * i));
@@ -61,11 +69,19 @@ public final class Helpers {
 		}
 	}
 	
+    public static final int checkFromIndexSize(final int fromIndex, final int size, final int length) {
+        if ((length | fromIndex | size) < 0 || length - fromIndex < size) {
+        	throw new IndexOutOfBoundsException(String.format("Invalid range (%s:%s) for length %s", fromIndex, size, length));
+        }
+        
+        return fromIndex;
+	}
+	
 	public static final long getNum(final byte[] bytes, final int offset, final int length, final boolean littleEndian) {
-		Objects.checkFromIndexSize(offset, length, bytes.length);
+		checkFromIndexSize(offset, length, bytes.length);
 		
 		if (0 == length) {
-			new Exception(String.format("Warning: 0-length range starting at %s of %s", offset, bytes.length)).printStackTrace();
+			new Exception(String.format("Warning: empty range starting at %s of %s", offset, bytes.length)).printStackTrace();
 		}
 		
 		var result = 0L;
@@ -119,6 +135,20 @@ public final class Helpers {
 				String.format(format, args));
 	}
 	
+	private static PrintStream debugOut = System.out;
+	
+	public static final void setDebugOut(final PrintStream debugOut) {
+		Helpers.debugOut = Objects.requireNonNull(debugOut);
+	}
+	
+	public static final void setDebugOut(final String outFilePath) {
+		try {
+			setDebugOut(new PrintStream(outFilePath));
+		} catch (final FileNotFoundException e) {
+			e.printStackTrace();
+		}
+	}
+	
 	public static final void dprintlnf(final String format, final Object... args) {
 		final var stackTrace = Thread.currentThread().getStackTrace();
 		
@@ -131,7 +161,7 @@ public final class Helpers {
 				
 				if (null != debug) {
 					if (debug.value()) {
-						System.out.println(dformat(3, format, args));
+						debugOut.println(dformat(3, format, args));
 					}
 					
 					break;
