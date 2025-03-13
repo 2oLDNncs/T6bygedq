@@ -11,7 +11,7 @@ public final class RecData_X0024_ParseTree extends RecData {
 	public final EnumVar<NodeType>    vNodeType              = this.newEnumVar(NODE_TYPE, NodeType.decoder);
 	public final EnumVar<NodeSubtype> vNodeSubtype           = this.newEnumVar(NODE_SUBTYPE, new SuppliedDecoder<>(() -> this.vNodeType.get().subtypeDecoder));
 	public final LongVar              vParentNodeNumber      = this.newLongVar(PARENT_NODE_NUMBER);
-	public final LongVar              vLeftSIblingNodeNumber = this.newLongVar(LEFT_SIBLING_NODE_NUMBER);
+	public final LongVar              vLeftSiblingNodeNumber = this.newLongVar(LEFT_SIBLING_NODE_NUMBER);
 	public final LongVar              vSymbolId              = this.newLongVar(SYMBOL_ID);
 	public final LongVar              vSectionSymbolId       = this.newLongVar(SECTION_SYMBOL_ID);
 	public final LongVar              vFirstTokenNumber      = this.newLongVar(FIRST_TOKEN_NUMBER);
