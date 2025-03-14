@@ -39,7 +39,7 @@ public final class ReadingContext {
 	
 	public final void read(final byte[] bytes) throws IOException {
 		this.columnNumber += this.bytesRead;
-		this.bytesRead = this.input.read(bytes);
+		this.bytesRead = this.input.readNBytes(bytes, 0, bytes.length);
 		
 		if (bytes.length != this.bytesRead) {
 			throw new IllegalStateException(String.format("Read error at (%s:%s): Expected %s bytes, Actual %s bytes",

@@ -297,6 +297,7 @@ public final class RecData_X0042_Symbol_4_2 extends RecData {
 	 */
 	public static enum SymbolType {
 		
+		NONE,
 		CLASS_NAME,
 		METHOD_NAME,
 		DATA_NAME,
@@ -308,6 +309,7 @@ public final class RecData_X0042_Symbol_4_2 extends RecData {
 		
 		static final Decoder<Integer, SymbolType> decoder =
 				new KeyMaskingDecoder<>(new ReversibleMap<Integer, SymbolType>()
+						.set(0x00, NONE)
 						.set(0x68, CLASS_NAME)
 						.set(0x58, METHOD_NAME)
 						.set(0x40, DATA_NAME)
@@ -324,6 +326,7 @@ public final class RecData_X0042_Symbol_4_2 extends RecData {
 	 */
 	public static enum SymbolAttribute {
 		
+		NONE,
 		NUMERIC,
 		ELEMENTARY_CHARACTER,
 		GROUP,
@@ -341,6 +344,7 @@ public final class RecData_X0042_Symbol_4_2 extends RecData {
 		
 		static final Decoder<Integer, SymbolAttribute> decoder =
 				new ReversibleMap<Integer, SymbolAttribute>()
+				.set(0x00, NONE)
 				.set(0x01, NUMERIC)
 				.set(0x02, ELEMENTARY_CHARACTER)
 				.set(0x03, GROUP)
