@@ -44,7 +44,7 @@ public final class ParseSysadata {
 		
 		ap.setDefault(ARG_IN, "data/test_sysadata");
 		ap.setDefault(ARG_VERSION, "6.1");
-		ap.setDefault(ARG_TEST, true);
+		ap.setDefault(ARG_TEST, false);
 		
 		final String cblVersion = ap.getString(ARG_VERSION);
 		
