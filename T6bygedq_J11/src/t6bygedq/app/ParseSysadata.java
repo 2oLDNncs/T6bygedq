@@ -1,9 +1,13 @@
 package t6bygedq.app;
 
+import java.io.Closeable;
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.util.Iterator;
 
 import t6bygedq.lib.ArgsParser;
 import t6bygedq.lib.Helpers;
@@ -30,7 +34,7 @@ import t6bygedq.lib.cbl.RecHeader_6_1;
 /**
  * @author 2oLDNncs 20250202
  */
-@Debug(true)
+@Debug(false)
 public final class ParseSysadata {
 	
 	public static final String ARG_IN = "-In";
@@ -42,7 +46,7 @@ public final class ParseSysadata {
 		
 		ap.setDefault(ARG_IN, "data/test_sysadata");
 		ap.setDefault(ARG_VERSION, "6.1");
-		ap.setDefault(ARG_TEST, false);
+		ap.setDefault(ARG_TEST, true);
 		
 		final var cblVersion = ap.getString(ARG_VERSION);
 		
@@ -72,20 +76,14 @@ public final class ParseSysadata {
 		read_x_y(file, Rec::read_6_1);
 	}
 	
-	private static void read_x_y(final File file, final Reader read_x_y) throws IOException {
-		try (final var in = new FileInputStream(file)) {
-			final var rc = new ReadingContext(in);
-			
-			while (rc.isInputAvailable()) {
-				rc.incrLineNumber();
-				
-				try {
-					read_x_y.read(rc);
-				} catch (final RuntimeException e) {
-					System.err.println(String.format("Read error at Line %s Column %s", rc.getLineNumber(), rc.getColumnNumber()));
-					throw e;
-				}
+	private static void read_x_y(final File file, final RecReader read_x_y) throws IOException {
+		try (final var prr = new ProgressiveRecReader(file, read_x_y)) {
+			while (prr.hasNext()) {
+				Helpers.dprintlnf("%s%%", prr.getProgress(10L));
+				prr.next();
 			}
+			
+			Helpers.dprintlnf("%s%%", prr.getProgress(10L));
 		}
 	}
 	
@@ -163,10 +161,13 @@ public final class ParseSysadata {
 				rec.write(out);
 			}
 			
-			{
+			final var n = 1_000L;
+			
+			for (var i = 1; i < n; i += 1L) {
 				final var rd = rec.setAndGetRecData(RecData_X0024_ParseTree.class);
 				
-				rd.vNodeNumber.set(456L);
+				rd.vNodeNumber.set(i);
+				rd.vSymbolId.set(i);
 				rd.vNodeType.set(RecData_X0024_ParseTree.NodeType.INITIALIZE_LITERAL_NO_TOKENS);
 				rd.vNodeSubtype.set(RecData_X0024_ParseTree.NodeSubtype.ALPHABETIC_13);
 				
@@ -201,9 +202,10 @@ public final class ParseSysadata {
 				rec.write(out);
 			}
 			
-			{
+			for (var i = 1; i < n; i += 1L) {
 				final var rd = rec.setAndGetRecData(RecData_X0042_Symbol_6_1.class);
 				
+				rd.vSymbolId.set(i);
 				rd.vSymbolType.set(RecData_X0042_Symbol_6_1.SymbolType.DATA_NAME);
 				rd.vSymbolAttribute.set(RecData_X0042_Symbol_6_1.SymbolAttribute.NUMERIC);
 //				rd.vMnemonicNameSymbolClauses.set(RecData_Symbol.MnemonicNameSymbolClauses.C01);
@@ -274,9 +276,72 @@ public final class ParseSysadata {
 	/**
 	 * @author 2oLDNncs 20250223
 	 */
-	private static abstract interface Reader {
+	public static abstract interface RecReader {
 		
-		public abstract void read(ReadingContext rc) throws IOException;
+		public abstract Rec read(ReadingContext rc) throws IOException;
+		
+	}
+	
+	/**
+	 * @author 2oLDNncs 20250315
+	 */
+	public static final class ProgressiveRecReader implements Closeable, Iterator<Rec> {
+		
+		private final long totalBytes;
+		
+		private final InputStream in;
+		
+		private final ReadingContext rc;
+		
+		private final RecReader recReader;
+		
+		public ProgressiveRecReader(final File file, final RecReader recReader) throws FileNotFoundException {
+			this.totalBytes = file.length();
+			this.in = new FileInputStream(file);
+			this.rc = new ReadingContext(in);
+			this.recReader = recReader;
+		}
+		
+		public final long getTotalBytes() {
+			return this.totalBytes;
+		}
+		
+		public final long getBytesRead() {
+			return this.rc.getTotalBytesRead();
+		}
+		
+		public final double getProgress(final long p) {
+			return 100L * p * this.getBytesRead() / this.getTotalBytes() / (double) p;
+		}
+		
+		@Override
+		public final boolean hasNext() {
+			try {
+				return this.rc.isInputAvailable();
+			} catch (final IOException e) {
+				throw this.newException(e);
+			}
+		}
+		
+		@Override
+		public final Rec next() {
+			try {
+				return this.recReader.read(this.rc);
+			} catch (final Exception e) {
+				throw this.newException(e);
+			}
+		}
+		
+		@Override
+		public void close() throws IOException {
+			this.in.close();
+		}
+		
+		private final RuntimeException newException(final Exception cause) {
+			return new RuntimeException(
+					String.format("Read error at Line %s Column %s", rc.getLineNumber(), rc.getColumnNumber()),
+					cause);
+		}
 		
 	}
 	

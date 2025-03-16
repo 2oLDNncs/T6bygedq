@@ -8,13 +8,15 @@ import java.io.InputStream;
  */
 public final class ReadingContext {
 	
-	final InputStream input;
+	private final InputStream input;
 	
-	int lineNumber;
+	private long totalBytesRead;
 	
-	int columnNumber;
+	private int lineNumber;
 	
-	int bytesRead;
+	private int columnNumber;
+	
+	private int bytesRead;
 	
 	public ReadingContext(final InputStream input) {
 		this.input = input;
@@ -22,6 +24,10 @@ public final class ReadingContext {
 	
 	public final boolean isInputAvailable() throws IOException {
 		return 0 < this.input.available();
+	}
+	
+	public final long getTotalBytesRead() {
+		return this.totalBytesRead;
 	}
 	
 	public final int getLineNumber() {
@@ -40,6 +46,7 @@ public final class ReadingContext {
 	public final void read(final byte[] bytes) throws IOException {
 		this.columnNumber += this.bytesRead;
 		this.bytesRead = this.input.readNBytes(bytes, 0, bytes.length);
+		this.totalBytesRead += this.bytesRead;
 		
 		if (bytes.length != this.bytesRead) {
 			throw new IllegalStateException(String.format("Read error at (%s:%s): Expected %s bytes, Actual %s bytes",

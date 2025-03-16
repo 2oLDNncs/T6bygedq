@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.function.Function;
@@ -22,6 +23,27 @@ public abstract class RecPart {
 	
 	protected RecPart(final Buffer buffer) {
 		this.buffer = buffer;
+	}
+	
+	public final Map<String, Object> getProperties() {
+		final var result = new LinkedHashMap<String, Object>();
+		
+		this.getProperties(result);
+		
+		return result;
+	}
+	
+	protected void getProperties(final Map<String, Object> properties) {
+		for (final var field : this.getClass().getFields()) {
+			if (field.getName().startsWith("v")) {
+				try {
+					properties.put(field.getName().substring(1), field.get(this));
+				} catch (final Exception e) {
+					System.err.println(String.format("Field: %s", field));
+					e.printStackTrace();
+				}
+			}
+		}
 	}
 	
 	public final int getLength() {

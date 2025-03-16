@@ -5,7 +5,7 @@ import t6bygedq.lib.Helpers;
 /**
  * @author 2oLDNncs 20250203
  */
-public final class RecData_X0042_Symbol_4_2 extends RecData {
+public final class RecData_X0042_Symbol_4_2 extends RecData_X0042_Symbol {
 	
 	public final LongVar                            vSymbolId                  = this.newLongVar(SYMBOL_ID);
 	public final LongVar                            vLineNumber                = this.newLongVar(LINE_NUMBER);

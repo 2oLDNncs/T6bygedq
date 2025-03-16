@@ -57,7 +57,7 @@ public final class RecData_X0120_Events extends RecData {
 	protected final void afterRead() {
 		super.afterRead();
 		
-		final StringVar vRectypePrefix = this.newStringVarF(RECTYPE_PREFIX);
+		final var vRectypePrefix = this.newStringVarF(RECTYPE_PREFIX);
 		
 		switch (vRectypePrefix.get()) {
 		case "TIMES":

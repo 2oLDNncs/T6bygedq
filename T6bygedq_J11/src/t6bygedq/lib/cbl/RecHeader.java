@@ -1,6 +1,7 @@
 package t6bygedq.lib.cbl;
 
 import java.util.Arrays;
+import java.util.Map;
 
 import t6bygedq.lib.Helpers;
 
@@ -17,6 +18,12 @@ public abstract class RecHeader extends RecPart {
 	
 	protected RecHeader() {
 		super(new Buffer(staticRegionGenerator.getTotalLength(), false));
+	}
+	
+	@Override
+	protected final void getProperties(final Map<String, Object> properties) {
+		super.getProperties(properties);
+		properties.put("RecordType", this.getRecordType());
 	}
 	
 	@Override
