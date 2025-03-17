@@ -32,6 +32,7 @@ import javax.swing.tree.TreePath;
 import javax.swing.tree.TreeSelectionModel;
 
 import t6bygedq.app.ParseSysadata.RecReader;
+import t6bygedq.lib.ArgsParser;
 import t6bygedq.lib.SwingHelpers;
 import t6bygedq.lib.cbl.LongVar;
 import t6bygedq.lib.cbl.Rec;
@@ -237,7 +238,26 @@ public final class SysadataViewer extends JPanel {
 	
 	static final String K_JFC_CURRENT_DIRECTORY_PATH = "jfc.currentDirectoryPath";
 	
+	public static final String K_VERSION = "-Version";
+	
 	public static final void main(final String... args) throws IOException {
+		final var ap = new ArgsParser(args);
+		
+		ap.setDefault(K_VERSION, "6.1");
+		
+		final RecReader rr;
+		
+		switch (ap.getString(K_VERSION)) {
+		case "4.2":
+			rr = Rec::read_4_2;
+			break;
+		case "6.1":
+			rr = Rec::read_6_1;
+			break;
+		default:
+			throw new IllegalArgumentException(String.format("Unknown version: %s", ap.getString(K_VERSION)));
+		}
+		
 		SwingHelpers.useSystemLookAndFeel();
 		
 		final var sv = new SysadataViewer();
@@ -251,7 +271,7 @@ public final class SysadataViewer extends JPanel {
 				((JFrame) w).setTitle(jfc.getSelectedFile().getName());
 			});
 			
-			if (!loadFromFile(jfc.getSelectedFile(), Rec::read_6_1, rec -> {
+			if (!loadFromFile(jfc.getSelectedFile(), rr, rec -> {
 				SwingUtilities.invokeLater(() -> {
 					sv.addRec(rec);
 				});

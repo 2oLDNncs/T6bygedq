@@ -83,7 +83,7 @@ public final class RecData_X0120_Events extends RecData {
 		}
 	}
 	
-	static final Buffer.Region.Generator staticRegionGenerator =
+	private static final Buffer.Region.Generator staticRegionGenerator =
 			getStaticRegionGenerator(RecData_X0120_Events.class);
 	
 	private static final Buffer.Region LENGTH_OF_FOLLOWING = staticRegionGenerator.newFixedLength(2);

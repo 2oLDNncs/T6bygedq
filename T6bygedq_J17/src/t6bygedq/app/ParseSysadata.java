@@ -7,7 +7,9 @@ import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.HashMap;
 import java.util.Iterator;
+import java.util.Random;
 
 import t6bygedq.lib.ArgsParser;
 import t6bygedq.lib.Helpers;
@@ -162,10 +164,21 @@ public final class ParseSysadata {
 			}
 			
 			final var n = 1_000L;
+			final var lastChild = new HashMap<Long, Long>();
+			final var rand = new Random(n);
 			
-			for (var i = 1; i < n; i += 1L) {
+			lastChild.computeIfAbsent(0L, __ -> 0L);
+			
+			for (var i = 1L; i < n; i += 1L) {
+				final var parentNodeNumber = rand.nextLong(i);
+				final var leftSiblingNumber = lastChild.computeIfAbsent(parentNodeNumber, __ -> 0L);
+				
+				lastChild.put(parentNodeNumber, i);
+				
 				final var rd = rec.setAndGetRecData(RecData_X0024_ParseTree.class);
 				
+				rd.vParentNodeNumber.set(parentNodeNumber);
+				rd.vLeftSiblingNodeNumber.set(leftSiblingNumber);
 				rd.vNodeNumber.set(i);
 				rd.vSymbolId.set(i);
 				rd.vNodeType.set(RecData_X0024_ParseTree.NodeType.INITIALIZE_LITERAL_NO_TOKENS);

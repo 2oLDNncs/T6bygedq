@@ -87,46 +87,35 @@ public final class ArgsParser {
 		final var args = this.args;
 		this.args = null;
 		
-		var keyIndex = 0;
-		int keyStep;
-		
-		while (keyIndex < args.length) {
+		for (var keyIndex = 0; keyIndex < args.length; keyIndex += 2) {
 			final var key = args[keyIndex];
 			final var defaultValue = this.get(key);
+			final var valueString = args[keyIndex + 1];
 			Object value = "";
 			
 			if (defaultValue instanceof Boolean) {
-				value = !(Boolean) defaultValue;
-				keyStep = 1;
+				value = Boolean.parseBoolean(valueString);
+			} else if (defaultValue instanceof Byte) {
+				value = Byte.parseByte(valueString);
+			} else if (defaultValue instanceof Character) {
+				value = Character.valueOf(valueString.charAt(0));
+			} else if (defaultValue instanceof Short) {
+				value = Short.parseShort(valueString);
+			} else if (defaultValue instanceof Integer) {
+				value = Integer.parseInt(valueString);
+			} else if (defaultValue instanceof Long) {
+				value = Long.parseLong(valueString);
+			} else if (defaultValue instanceof Float) {
+				value = Float.parseFloat(valueString);
+			} else if (defaultValue instanceof Double) {
+				value = Double.parseDouble(valueString);
+			} else if (defaultValue instanceof Enum<?>) {
+				value = parseEnum(cast(defaultValue.getClass()), valueString);
 			} else {
-				final var valueString = args[keyIndex + 1];
-		        
-				if (defaultValue instanceof Byte) {
-					value = Byte.parseByte(valueString);
-				} else if (defaultValue instanceof Character) {
-					value = Character.valueOf(valueString.charAt(0));
-				} else if (defaultValue instanceof Short) {
-					value = Short.parseShort(valueString);
-				} else if (defaultValue instanceof Integer) {
-					value = Integer.parseInt(valueString);
-				} else if (defaultValue instanceof Long) {
-					value = Long.parseLong(valueString);
-				} else if (defaultValue instanceof Float) {
-					value = Float.parseFloat(valueString);
-				} else if (defaultValue instanceof Double) {
-					value = Double.parseDouble(valueString);
-				} else if (defaultValue instanceof Enum<?>) {
-					value = parseEnum(cast(defaultValue.getClass()), valueString);
-				} else {
-					value = valueString;
-				}
-				
-				keyStep = 2;
+				value = valueString;
 			}
 			
 			this.set(key, value);
-			
-			keyIndex += keyStep;
 		}
 	}
 	
