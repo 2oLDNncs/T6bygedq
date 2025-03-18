@@ -165,7 +165,13 @@ public final class SysadataViewer extends JPanel {
 			result.append("</td>");
 			
 			result.append("<td>");
-			result.append(v);
+			try {
+				result.append(v);
+			} catch (final Exception e) {
+				new Exception(String.format("Error retrieving %s", k), e).printStackTrace();
+				
+				result.append("<span style='color: red'>?</span>");
+			}
 			result.append("</td>");
 			
 			result.append("</tr>");

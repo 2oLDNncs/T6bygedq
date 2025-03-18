@@ -56,7 +56,7 @@ public abstract class RecHeader extends RecPart {
 		final var buffer = new Buffer(bufferLength, this.vLittleEndian.get());
 		
 		if (0 <= this.expectedRecDataLength) {
-			buffer.setLengthLimit(expectedRecDataLength);
+			buffer.setLengthLimit(this.expectedRecDataLength);
 		}
 		
 		final var result = recordType.newRecData(buffer);

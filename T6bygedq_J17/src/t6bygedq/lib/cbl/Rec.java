@@ -56,6 +56,7 @@ public final class Rec {
 	public static final Rec read(final RecHeader recHeader, final ReadingContext rc) throws IOException {
 		final var result = new Rec(recHeader);
 		
+		rc.incrLineNumber();
 		result.getRecHeader().read(rc);
 		result.getRecData().read(rc);
 		

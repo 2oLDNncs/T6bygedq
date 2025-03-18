@@ -28,6 +28,7 @@ import t6bygedq.lib.cbl.RecData_X0024_ParseTree;
 import t6bygedq.lib.cbl.RecData_X0038_Source;
 import t6bygedq.lib.cbl.RecData_X0032_SourceError;
 import t6bygedq.lib.cbl.RecData_X0090_Statistics;
+import t6bygedq.lib.cbl.RecData_X0120_Events;
 import t6bygedq.lib.cbl.RecData_X0042_Symbol_6_1;
 import t6bygedq.lib.cbl.RecData_X0044_SymbolCrossReference;
 import t6bygedq.lib.cbl.RecData_X0030_Token;
@@ -278,6 +279,14 @@ public final class ParseSysadata {
 				rd.vDataDivisionStatements.set(456);
 				rd.vProcedureDivisionStatements.set(789);
 				rd.vProgramName.set("TheProgramName");
+				
+				rec.write(out);
+			}
+			
+			{
+				final var rd = rec.setAndGetRecData(RecData_X0120_Events.class);
+				
+				rd.setEventTimestamp();
 				
 				rec.write(out);
 			}

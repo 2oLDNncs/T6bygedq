@@ -47,6 +47,10 @@ public abstract class RecPart {
 	}
 	
 	public final int getLength() {
+		return this.protectedGetLength();
+	}
+	
+	protected int protectedGetLength() {
 		if (this.isStaticRegionGenerator()) {
 			return getStaticLength(this.getClass());
 		}

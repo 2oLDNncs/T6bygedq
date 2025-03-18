@@ -196,6 +196,11 @@ public final class RecData_X0042_Symbol_4_2 extends RecData_X0042_Symbol {
 			Helpers.ignore(this.vReserved02);
 		}
 		
+		@Override
+		public final String toString() {
+			return String.format("%s %s", this.vKeySequence, this.vKeyId);
+		}
+		
 	}
 	
 	/**
@@ -204,19 +209,24 @@ public final class RecData_X0042_Symbol_4_2 extends RecData_X0042_Symbol {
 	public final class Pair extends RecPart {
 		
 		private final Buffer.Region firstValueLength;
-		public final StringVar firstValue;
+		public final StringVar vFirstValue;
 		private final Buffer.Region secondValueLength;
-		public final StringVar secondValue;
+		public final StringVar vSecondValue;
 		
 		Pair(final Buffer.Region.Generator rg) {
 			super(RecData_X0042_Symbol_4_2.this.buffer);
 			Buffer.DEBUG = false;
 			this.setDynamicRegionGenerator(rg);
 			this.firstValueLength = this.newDynamicFixedLengthRegion(2);
-			this.firstValue  = this.newStringVarV(this.firstValueLength);
+			this.vFirstValue  = this.newStringVarV(this.firstValueLength);
 			this.secondValueLength = this.newDynamicFixedLengthRegion(2);
-			this.secondValue = this.newStringVarV(this.secondValueLength);
+			this.vSecondValue = this.newStringVarV(this.secondValueLength);
 			Buffer.DEBUG = false;
+		}
+		
+		@Override
+		public final String toString() {
+			return String.format("%s:%s", this.vFirstValue.get(), this.vSecondValue.get());
 		}
 		
 	}

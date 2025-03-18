@@ -1,5 +1,7 @@
 package t6bygedq.lib.cbl;
 
+import java.util.Map;
+
 import t6bygedq.lib.Helpers;
 
 /**
@@ -11,6 +13,13 @@ public final class RecData_X0120_Events extends RecData {
 	
 	public RecData_X0120_Events(final Buffer buffer) {
 		super(buffer);
+	}
+	
+	@Override
+	protected final void getProperties(final Map<String, Object> properties) {
+		if (null != this.getEvent()) {
+			this.getEvent().getProperties(properties);
+		}
 	}
 	
 	public final <E extends Event> E getEvent() {
@@ -53,6 +62,21 @@ public final class RecData_X0120_Events extends RecData {
 		return this.getEvent();
 	}
 	
+	@Override
+	protected final int protectedGetLength() {
+		if (null != this.getEvent()) {
+			return this.getEvent().getLength();
+		}
+		
+		return this.buffer.getLength();
+	}
+	
+	@Override
+	protected final void beforeWrite() {
+		this.buffer.insertBytes(this.buffer.getLength(), this.getEvent().getLength() - this.buffer.getLength());
+		this.getEvent().beforeWrite();
+	}
+
 	@Override
 	protected final void afterRead() {
 		super.afterRead();
@@ -150,7 +174,7 @@ public final class RecData_X0120_Events extends RecData {
 		}
 		
 		@Override
-		protected void beforeWrite() {
+		protected final void beforeWrite() {
 			super.beforeWrite();
 			this.vRecordType.set(S_RECORD_TYPE);
 		}
@@ -307,6 +331,7 @@ public final class RecData_X0120_Events extends RecData {
 		private final StringVar vBlank03                  = this.newStringVarF(BLANK_03);
 		public final IntVar     vReferenceIndicator       = this.newIntVar(REFERENCE_INDICATOR);
 		private final StringVar vBlank04                  = this.newStringVarF(BLANK_04);
+		private final StringVar vBlank05                  = this.newStringVarF(BLANK_05);
 		
 		public final StringVar  vSourceFileName           = this.newStringVarV(SOURCE_FILE_NAME_LENGTH);
 		
@@ -326,6 +351,7 @@ public final class RecData_X0120_Events extends RecData {
 			this.vRecordType.set(S_RECORD_TYPE);
 			this.vBlank03.set(" ");
 			this.vBlank04.set(" ");
+			this.vBlank05.set(" ");
 		}
 		
 		public static final String S_RECORD_TYPE = "FILEID";
@@ -342,6 +368,7 @@ public final class RecData_X0120_Events extends RecData {
 		private static final Buffer.Region REFERENCE_INDICATOR         = staticRegionGenerator.newFixedLength(1);
 		private static final Buffer.Region BLANK_04                    = staticRegionGenerator.newFixedLength(1);
 		private static final Buffer.Region SOURCE_FILE_NAME_LENGTH     = staticRegionGenerator.newFixedLength(2).setNumberFormat(Buffer.Region.NumberFormat.TEXT_DECIMAL);
+		private static final Buffer.Region BLANK_05                    = staticRegionGenerator.newFixedLength(1);
 		
 	}
 	
