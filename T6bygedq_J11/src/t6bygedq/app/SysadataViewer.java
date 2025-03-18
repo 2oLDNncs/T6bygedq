@@ -9,22 +9,28 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 import java.util.prefs.Preferences;
+import java.util.regex.Pattern;
 
-import javax.swing.DefaultListModel;
 import javax.swing.JFileChooser;
 import javax.swing.JFrame;
-import javax.swing.JList;
 import javax.swing.JPanel;
 import javax.swing.JProgressBar;
 import javax.swing.JTabbedPane;
+import javax.swing.JTable;
+import javax.swing.JTextField;
 import javax.swing.JTextPane;
 import javax.swing.JTree;
 import javax.swing.ListSelectionModel;
+import javax.swing.RowFilter;
 import javax.swing.SwingUtilities;
+import javax.swing.event.CaretEvent;
+import javax.swing.event.CaretListener;
 import javax.swing.event.ListSelectionEvent;
 import javax.swing.event.ListSelectionListener;
 import javax.swing.event.TreeSelectionEvent;
 import javax.swing.event.TreeSelectionListener;
+import javax.swing.table.DefaultTableModel;
+import javax.swing.table.TableRowSorter;
 import javax.swing.tree.DefaultMutableTreeNode;
 import javax.swing.tree.DefaultTreeModel;
 import javax.swing.tree.MutableTreeNode;
@@ -33,6 +39,7 @@ import javax.swing.tree.TreeSelectionModel;
 
 import t6bygedq.app.ParseSysadata.RecReader;
 import t6bygedq.lib.ArgsParser;
+import t6bygedq.lib.Helpers;
 import t6bygedq.lib.SwingHelpers;
 import t6bygedq.lib.cbl.LongVar;
 import t6bygedq.lib.cbl.Rec;
@@ -45,7 +52,7 @@ import t6bygedq.lib.cbl.RecData_X0042_Symbol;
  */
 public final class SysadataViewer extends JPanel {
 	
-	private final JList<RecItem> recList = new JList<>(new DefaultListModel<>());
+	private final JTable recTable = new JTable(new DefaultTableModel(new Object[] {"Rec"}, 0));
 	
 	private final JTree parseTreeView = new JTree(new DefaultTreeModel(new DefaultMutableTreeNode(), false));
 	
@@ -57,19 +64,57 @@ public final class SysadataViewer extends JPanel {
 	
 	private final Map<Long, MutableTreeNode> nodes = new HashMap<>();
 	
+	private Pattern filterPattern = Pattern.compile("");
+	
 	public SysadataViewer() {
 		super(new BorderLayout());
 		
-		this.explorerView.addTab("List", SwingHelpers.scrollable(this.recList));
+		final var listPanel = new JPanel(new BorderLayout());
+		
+		final var filter = new JTextField();
+		
+		listPanel.add(filter, BorderLayout.NORTH);
+		listPanel.add(SwingHelpers.scrollable(this.recTable), BorderLayout.CENTER);
+		
+		this.explorerView.addTab("List", listPanel);
 		this.explorerView.addTab("Tree", SwingHelpers.scrollable(this.parseTreeView));
 		
-		this.recList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-		this.recList.addListSelectionListener(new ListSelectionListener() {
+		recTable.setAutoCreateRowSorter(true);
+		
+		((TableRowSorter<DefaultTableModel>) this.recTable.getRowSorter()).setRowFilter(new RowFilter<>() {
+			
+			@Override
+			public final boolean include(final Entry<? extends DefaultTableModel, ? extends Integer> entry) {
+				return filterPattern.matcher(entry.getStringValue(0)).find();
+			}
+			
+		});
+		
+		filter.addCaretListener(new CaretListener() {
+			
+			@Override
+			public final void caretUpdate(final CaretEvent e) {
+				try {
+					filterPattern = Pattern.compile(filter.getText());
+					recTable.getRowSorter().allRowsChanged();
+				} catch (final Exception e1) {
+					Helpers.ignore(e1);
+				}
+			}
+			
+		});
+		
+		this.recTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+		this.recTable.getSelectionModel().addListSelectionListener(new ListSelectionListener() {
 			
 			@Override
 			public final void valueChanged(final ListSelectionEvent e) {
 				if (!e.getValueIsAdjusting()) {
-					updateContentView(recList.getSelectedValue());
+					final var selectedRow = recTable.getSelectedRow();
+					
+					if (0 <= selectedRow) {
+						updateContentView((RecItem) recTable.getValueAt(selectedRow, 0));
+					}
 				}
 			}
 			
@@ -182,10 +227,14 @@ public final class SysadataViewer extends JPanel {
 		return result.toString();
 	}
 	
+	private final DefaultTableModel getRecTableModel() {
+		return (DefaultTableModel) this.recTable.getModel();
+	}
+	
 	public final void addRec(final Rec rec) {
-		final var recItem = new RecItem(this.recList.getModel().getSize(), rec);
+		final var recItem = new RecItem(this.getRecTableModel().getRowCount(), rec);
 		
-		((DefaultListModel<RecItem>) this.recList.getModel()).addElement(recItem);
+		this.getRecTableModel().addRow(new Object[] { recItem });
 		
 		if (rec.getRecData() instanceof RecData_X0020_ExternalSymbol
 				|| rec.getRecData() instanceof RecData_X0042_Symbol) {
@@ -351,11 +400,37 @@ public final class SysadataViewer extends JPanel {
 		public final String toString() {
 			final var result = new StringBuilder();
 			
-			result.append(index);
+			result.append(this.index);
 			result.append(": ");
-			result.append(rec.getRecHeader().getRecordType());
+			result.append(this.rec.getRecHeader().getRecordType());
+			
+			final var properties = this.rec.getRecData().getProperties();
+			
+			appendProp(properties, "JobName", result);
+			appendProp(properties, "StepName", result);
+			appendProp(properties, "NodeNumber", result);
+			appendProp(properties, "SymbolId", result);
+			appendProp(properties, "SymbolName", result);
+			appendProp(properties, "ExternalName", result);
+			appendProp(properties, "TokenNumber", result);
+			appendProp(properties, "TokenText", result);
+			appendProp(properties, "ProgramName", result);
+			appendProp(properties, "LibraryName", result);
+			appendProp(properties, "LibraryDdname", result);
 			
 			return result.toString();
+		}
+		
+		private static final void appendProp(final Map<String, Object> properties, final String key, final StringBuilder sb) {
+			final var vProp = properties.get(key);
+			
+			if (null != vProp) {
+				sb.append("(");
+				sb.append(key);
+				sb.append(":");
+				sb.append(vProp.toString());
+				sb.append(")");
+			}
 		}
 		
 	}
