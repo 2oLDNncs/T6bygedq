@@ -13,7 +13,6 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -105,21 +104,6 @@ public final class ParseCblXref {
 			if (!ap.isBlank(ARG_FILTER)) {
 				final var filter = Pattern.compile(ap.getString(ARG_FILTER), Pattern.CASE_INSENSITIVE);
 				final var filteredNodes = computeFilteredNodes(flows, filter);
-//				final var filteredNodes = new HashSet<>();
-//				
-//				{
-//					final var comps = getComps(computeNodeComps(flows));
-//					final var filter = Pattern.compile(ap.getString(ARG_FILTER), Pattern.CASE_INSENSITIVE);
-//					
-//					comps.forEach(comp -> {
-//						for (final var node : comp) {
-//							if (filter.matcher(node).find()) {
-//								filteredNodes.addAll(comp);
-//								break;
-//							}
-//						}
-//					});
-//				}
 				
 				{
 					final List<List<Object>> filteredFlows = new ArrayList<>();
@@ -128,7 +112,7 @@ public final class ParseCblXref {
 						final var src = Objects.toString(flow.get(3));
 						final var dst = Objects.toString(flow.get(4));
 						
-						if (filteredNodes.contains(src) || filteredNodes.contains(dst)) {
+						if (filteredNodes.contains(src) && filteredNodes.contains(dst)) {
 							filteredFlows.add(flow);
 						}
 					});
@@ -139,14 +123,6 @@ public final class ParseCblXref {
 				flows2gv(flows, ap.getFile(ARG_FLOWS_GV));
 			}
 		}
-	}
-	
-	private static final <N> Collection<Collection<N>> getComps(final Map<N, Collection<N>> nodeComps) {
-		final var comps = new IdentityHashMap<Collection<N>, Object>();
-		
-		nodeComps.values().forEach(c -> comps.put(c, c));
-		
-		return comps.keySet();
 	}
 	
 	private static final Collection<String> computeFilteredNodes(final List<List<Object>> flows, final Pattern filter) {
@@ -196,46 +172,6 @@ public final class ParseCblXref {
 		}
 		
 		return result;
-	}
-	
-	private static final Map<String, Collection<String>> computeNodeComps(final List<List<Object>> flows) {
-		final var result = new HashMap<String, Collection<String>>();
-		
-		flows.forEach(flow -> {
-			final var src = Objects.toString(flow.get(3));
-			final var dst = Objects.toString(flow.get(4));
-			
-			connectComps(src, dst, result);
-		});
-		
-		return result;
-	}
-	
-	private static final <N> void connectComps(final N src, final N dst,
-			final Map<N, Collection<N>> nodeComps) {
-		final var existingSrcComp = nodeComps.get(src);
-		final var existingDstComp = nodeComps.get(dst);
-		
-		if (null != existingSrcComp) {
-			if (null != existingDstComp) {
-				existingDstComp.forEach(node -> nodeComps.put(node, existingSrcComp));
-				existingSrcComp.addAll(existingDstComp);
-			} else {
-				nodeComps.put(dst, existingSrcComp);
-				existingSrcComp.add(dst);
-			}
-		} else {
-			if (null != existingDstComp) {
-				nodeComps.put(src, existingDstComp);
-				existingDstComp.add(src);
-			} else {
-				final var comp = new HashSet<N>();
-				comp.add(src);
-				comp.add(dst);
-				nodeComps.put(src, comp);
-				nodeComps.put(dst, comp);
-			}
-		}
 	}
 	
 	public static final void flows2gv(final List<List<Object>> flows, final File gvFile) throws IOException {
