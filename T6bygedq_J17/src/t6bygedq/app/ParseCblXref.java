@@ -10,6 +10,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
@@ -101,21 +102,23 @@ public final class ParseCblXref {
 		
 		if (!ap.isBlank(ARG_FLOWS_GV)) {
 			if (!ap.isBlank(ARG_FILTER)) {
-				final var filteredNodes = new HashSet<>();
-				
-				{
-					final var comps = getComps(computeNodeComps(flows));
-					final var filter = Pattern.compile(ap.getString(ARG_FILTER), Pattern.CASE_INSENSITIVE);
-					
-					comps.forEach(comp -> {
-						for (final var node : comp) {
-							if (filter.matcher(node).find()) {
-								filteredNodes.addAll(comp);
-								break;
-							}
-						}
-					});
-				}
+				final var filter = Pattern.compile(ap.getString(ARG_FILTER), Pattern.CASE_INSENSITIVE);
+				final var filteredNodes = computeFilteredNodes(flows, filter);
+//				final var filteredNodes = new HashSet<>();
+//				
+//				{
+//					final var comps = getComps(computeNodeComps(flows));
+//					final var filter = Pattern.compile(ap.getString(ARG_FILTER), Pattern.CASE_INSENSITIVE);
+//					
+//					comps.forEach(comp -> {
+//						for (final var node : comp) {
+//							if (filter.matcher(node).find()) {
+//								filteredNodes.addAll(comp);
+//								break;
+//							}
+//						}
+//					});
+//				}
 				
 				{
 					final List<List<Object>> filteredFlows = new ArrayList<>();
@@ -143,6 +146,55 @@ public final class ParseCblXref {
 		nodeComps.values().forEach(c -> comps.put(c, c));
 		
 		return comps.keySet();
+	}
+	
+	private static final Collection<String> computeFilteredNodes(final List<List<Object>> flows, final Pattern filter) {
+		final var nodes = new HashSet<String>();
+		final var backward = new HashMap<String, Collection<String>>();
+		final var forward = new HashMap<String, Collection<String>>();
+		
+		flows.forEach(flow -> {
+			final var src = Objects.toString(flow.get(3));
+			final var dst = Objects.toString(flow.get(4));
+			
+			nodes.add(src);
+			nodes.add(dst);
+			
+			backward.computeIfAbsent(dst, __ -> new HashSet<>()).add(src);
+			forward.computeIfAbsent(src, __ -> new HashSet<>()).add(dst);
+		});
+		
+		final var result = new HashSet<String>();
+		
+		{
+			final var seeds = new HashSet<String>();
+			
+			for (final var node : nodes) {
+				if (filter.matcher(node).find()) {
+					seeds.add(node);
+				}
+			}
+			
+			result.addAll(collectConnected(seeds, backward));
+			result.addAll(collectConnected(seeds, forward));
+		}
+		
+		return result;
+	}
+	
+	private static final <T> Collection<T> collectConnected(final Collection<T> seeds, final Map<T, Collection<T>> next) {
+		final var result = new HashSet<T>();
+		final var todo = new ArrayList<>(seeds);
+		
+		for (var i = 0; i < todo.size(); i += 1) {
+			final var node = todo.get(i);
+			
+			if (result.add(node)) {
+				todo.addAll(next.getOrDefault(node, Collections.emptySet()));
+			}
+		}
+		
+		return result;
 	}
 	
 	private static final Map<String, Collection<String>> computeNodeComps(final List<List<Object>> flows) {
