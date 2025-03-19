@@ -7,8 +7,13 @@ import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.util.HashMap;
+import java.io.UncheckedIOException;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Random;
 
 import t6bygedq.lib.ArgsParser;
@@ -16,22 +21,22 @@ import t6bygedq.lib.Helpers;
 import t6bygedq.lib.Helpers.Debug;
 import t6bygedq.lib.cbl.ReadingContext;
 import t6bygedq.lib.cbl.Rec;
+import t6bygedq.lib.cbl.RecData_X0000_JobIdentification;
 import t6bygedq.lib.cbl.RecData_X0001_AdataIdentification;
 import t6bygedq.lib.cbl.RecData_X0002_CompilationUnitDelimiter;
-import t6bygedq.lib.cbl.RecData_X0039_CopyReplacing;
-import t6bygedq.lib.cbl.RecData_X0020_ExternalSymbol;
-import t6bygedq.lib.cbl.RecData_X0000_JobIdentification;
-import t6bygedq.lib.cbl.RecData_X0060_Library;
-import t6bygedq.lib.cbl.RecData_X0046_NestedProgram;
 import t6bygedq.lib.cbl.RecData_X0010_Options_6_1;
+import t6bygedq.lib.cbl.RecData_X0020_ExternalSymbol;
 import t6bygedq.lib.cbl.RecData_X0024_ParseTree;
-import t6bygedq.lib.cbl.RecData_X0038_Source;
+import t6bygedq.lib.cbl.RecData_X0030_Token;
 import t6bygedq.lib.cbl.RecData_X0032_SourceError;
-import t6bygedq.lib.cbl.RecData_X0090_Statistics;
-import t6bygedq.lib.cbl.RecData_X0120_Events;
+import t6bygedq.lib.cbl.RecData_X0038_Source;
+import t6bygedq.lib.cbl.RecData_X0039_CopyReplacing;
 import t6bygedq.lib.cbl.RecData_X0042_Symbol_6_1;
 import t6bygedq.lib.cbl.RecData_X0044_SymbolCrossReference;
-import t6bygedq.lib.cbl.RecData_X0030_Token;
+import t6bygedq.lib.cbl.RecData_X0046_NestedProgram;
+import t6bygedq.lib.cbl.RecData_X0060_Library;
+import t6bygedq.lib.cbl.RecData_X0090_Statistics;
+import t6bygedq.lib.cbl.RecData_X0120_Events;
 import t6bygedq.lib.cbl.RecHeader_6_1;
 
 /**
@@ -165,28 +170,49 @@ public final class ParseSysadata {
 			}
 			
 			final var n = 1_000L;
-			final var lastChild = new HashMap<Long, Long>();
 			final var rand = new Random(n);
+			final var tree = new LinkedHashMap<Long, List<List<Long>>>();
 			
-			lastChild.computeIfAbsent(0L, __ -> 0L);
-			
-			for (var i = 1L; i < n; i += 1L) {
+			for (var i = 1L; i <= n; i += 1L) {
 				final var parentNodeNumber = rand.nextLong() % i;
-				final var leftSiblingNumber = lastChild.computeIfAbsent(parentNodeNumber, __ -> 0L);
+				final var siblings = tree.computeIfAbsent(parentNodeNumber, __ -> new ArrayList<>());
 				
-				lastChild.put(parentNodeNumber, i);
-				
-				final var rd = rec.setAndGetRecData(RecData_X0024_ParseTree.class);
-				
-				rd.vParentNodeNumber.set(parentNodeNumber);
-				rd.vLeftSiblingNodeNumber.set(leftSiblingNumber);
-				rd.vNodeNumber.set(i);
-				rd.vSymbolId.set(i);
-				rd.vNodeType.set(RecData_X0024_ParseTree.NodeType.INITIALIZE_LITERAL_NO_TOKENS);
-				rd.vNodeSubtype.set(RecData_X0024_ParseTree.NodeSubtype.ALPHABETIC_13);
-				
-				rec.write(out);
+				if (siblings.isEmpty()) {
+					siblings.add(Arrays.asList(0L, i));
+				} else {
+					siblings.add(Arrays.asList(siblings.get(siblings.size() - 1).get(1), i));
+				}
 			}
+			
+			final var parents = new ArrayList<>(tree.keySet());
+			
+			Collections.shuffle(parents, rand);
+			
+			parents.forEach(parentNodeNumber -> {
+				final var children = tree.get(parentNodeNumber);
+				
+				Collections.shuffle(children, rand);
+				System.out.println(String.format("%s%s", parentNodeNumber, children));
+				
+				children.forEach(nodeInfo -> {
+					final var leftSiblingNodeNumber = nodeInfo.get(0);
+					final var nodeNumber = nodeInfo.get(1);
+					final var rd = rec.setAndGetRecData(RecData_X0024_ParseTree.class);
+					
+					rd.vParentNodeNumber.set(parentNodeNumber);
+					rd.vLeftSiblingNodeNumber.set(leftSiblingNodeNumber);
+					rd.vNodeNumber.set(nodeNumber);
+					rd.vSymbolId.set(nodeNumber);
+					rd.vNodeType.set(RecData_X0024_ParseTree.NodeType.INITIALIZE_LITERAL_NO_TOKENS);
+					rd.vNodeSubtype.set(RecData_X0024_ParseTree.NodeSubtype.ALPHABETIC_13);
+					
+					try {
+						rec.write(out);
+					} catch (final IOException e) {
+						throw new UncheckedIOException(e);
+					}
+				});
+			});
 			
 			{
 				final var rd = rec.setAndGetRecData(RecData_X0030_Token.class);

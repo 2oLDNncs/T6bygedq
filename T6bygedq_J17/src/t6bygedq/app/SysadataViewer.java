@@ -1,7 +1,9 @@
 package t6bygedq.app;
 
 import java.awt.BorderLayout;
+import java.awt.Color;
 import java.awt.Dimension;
+import java.awt.event.ActionEvent;
 import java.io.File;
 import java.io.IOException;
 import java.util.HashMap;
@@ -23,6 +25,7 @@ import javax.swing.JTree;
 import javax.swing.ListSelectionModel;
 import javax.swing.RowFilter;
 import javax.swing.SwingUtilities;
+import javax.swing.Timer;
 import javax.swing.event.CaretEvent;
 import javax.swing.event.CaretListener;
 import javax.swing.event.ListSelectionEvent;
@@ -33,7 +36,6 @@ import javax.swing.table.DefaultTableModel;
 import javax.swing.table.TableRowSorter;
 import javax.swing.tree.DefaultMutableTreeNode;
 import javax.swing.tree.DefaultTreeModel;
-import javax.swing.tree.MutableTreeNode;
 import javax.swing.tree.TreePath;
 import javax.swing.tree.TreeSelectionModel;
 
@@ -54,7 +56,7 @@ public final class SysadataViewer extends JPanel {
 	
 	private final JTable recTable = new JTable(new DefaultTableModel(new Object[] {"Rec"}, 0));
 	
-	private final JTree parseTreeView = new JTree(new DefaultTreeModel(new DefaultMutableTreeNode(), false));
+	private final JTree parseTreeView = new JTree(new DefaultTreeModel(new SwingNode(), false));
 	
 	private final JTextPane contentView = new JTextPane();
 	
@@ -62,7 +64,7 @@ public final class SysadataViewer extends JPanel {
 	
 	private final Map<Long, Rec> symbols = new HashMap<>();
 	
-	private final Map<Long, MutableTreeNode> nodes = new HashMap<>();
+	private final Map<Long, SwingNode> swingNodes = new HashMap<>();
 	
 	private Pattern filterPattern = Pattern.compile("");
 	
@@ -92,13 +94,21 @@ public final class SysadataViewer extends JPanel {
 		
 		filter.addCaretListener(new CaretListener() {
 			
+			private final Timer timer = new Timer(150, this::update);
+			
 			@Override
 			public final void caretUpdate(final CaretEvent e) {
+				this.timer.restart();
+			}
+			
+			private final void update(final ActionEvent e) {
 				try {
-					filterPattern = Pattern.compile(filter.getText());
+					filterPattern = Pattern.compile(filter.getText(), Pattern.CASE_INSENSITIVE);
 					recTable.getRowSorter().allRowsChanged();
+					filter.setForeground(null);
 				} catch (final Exception e1) {
 					Helpers.ignore(e1);
+					filter.setForeground(Color.RED);
 				}
 			}
 			
@@ -134,7 +144,7 @@ public final class SysadataViewer extends JPanel {
 			
 		});
 		
-		this.nodes.put(0L, (MutableTreeNode) this.parseTreeView.getModel().getRoot());
+		this.swingNodes.put(0L, (SwingNode) this.parseTreeView.getModel().getRoot());
 		
 		this.contentView.setContentType("text/html");
 		this.contentView.setEditable(false);
@@ -242,44 +252,61 @@ public final class SysadataViewer extends JPanel {
 			this.symbols.put(((LongVar) props.get("SymbolId")).get(), rec);
 		} else if (rec.getRecData() instanceof RecData_X0024_ParseTree) {
 			final var tm = this.getParseTreeModel();
-			
 			final var props = rec.getRecData().getProperties();
-			
 			final var nodeNumber = ((LongVar) props.get("NodeNumber")).get();
-			final var node = this.getParseTreeNode(nodeNumber);
-			
+			final var swingNode = this.getSwingNode(nodeNumber);
 			final var parentNodeNumber = ((LongVar) props.get("ParentNodeNumber")).get();
-			final var parentNode = this.getParseTreeNode(parentNodeNumber);
-			
+			final var parentSwingNode = this.getSwingNode(parentNodeNumber);
 			final var leftSiblingNodeNumber = ((LongVar) props.get("LeftSiblingNodeNumber")).get();
 			
 			if (0 < leftSiblingNodeNumber) {
-				final var leftSiblingNode = this.getParseTreeNode(leftSiblingNodeNumber);
+				final var leftSiblingSwingNode = this.getSwingNode(leftSiblingNodeNumber);
 				
-				if (leftSiblingNode.getParent() != parentNode) {
-					if (null != leftSiblingNode.getParent()) {
-						tm.removeNodeFromParent(leftSiblingNode);
-					}
-					
-					tm.insertNodeInto(leftSiblingNode, parentNode, parentNode.getChildCount());
-				}
+				this.reparent(leftSiblingSwingNode, parentSwingNode);
 			}
 			
-			if (null != node.getParent()) {
-				tm.removeNodeFromParent(node);
-			}
+			this.reparent(swingNode, parentSwingNode);
 			
-			tm.insertNodeInto(node, parentNode, parentNode.getChildCount());
+			tm.valueForPathChanged(new TreePath(tm.getPathToRoot(swingNode)), recItem);
 			
-			tm.valueForPathChanged(new TreePath(tm.getPathToRoot(node)), recItem);
+			this.sortChildren(parentSwingNode);
 		}
 	}
 	
-	private final MutableTreeNode getParseTreeNode(final long nodeNumber) {
-		return this.nodes.computeIfAbsent(nodeNumber, __ -> {
-			final var result = new DefaultMutableTreeNode(null);
+	private final void reparent(final SwingNode node, final SwingNode newParent) {
+		final var oldParent = (SwingNode) node.getParent();
+		
+		if (newParent != oldParent) {
+			this.getParseTreeModel().insertNodeInto(node, newParent, newParent.getChildCount());
+			this.sortChildren(oldParent);
+		}
+	}
+	
+	private final void sortChildren(final SwingNode parent) {
+		final var tm = this.getParseTreeModel();
+		final var n = parent.getChildCount();
+		
+		for (var i = 0; i < n; i += 1) {
+			final var child = (SwingNode) parent.getChildAt(i);
+			final var childIndex = child.getIndex();
 			
-			this.getParseTreeModel().insertNodeInto(result, nodes.get(0L), nodes.get(0L).getChildCount());
+			if (0 <= childIndex && childIndex < n && i != childIndex) {
+				final var otherChild = (SwingNode) parent.getChildAt(childIndex);
+				
+				if (childIndex != otherChild.getIndex()) {
+					tm.insertNodeInto(child, parent, childIndex);
+					
+					i -= 1;
+				}
+			}
+		}
+	}
+	
+	private final SwingNode getSwingNode(final long nodeNumber) {
+		return this.swingNodes.computeIfAbsent(nodeNumber, __ -> {
+			final var result = new SwingNode();
+			
+			this.getParseTreeModel().insertNodeInto(result, swingNodes.get(0L), swingNodes.get(0L).getChildCount());
 			
 			return result;
 		});
@@ -375,6 +402,53 @@ public final class SysadataViewer extends JPanel {
 	}
 	
 	/**
+	 * @author 2oLDNncs 20250318
+	 */
+	private final class SwingNode extends DefaultMutableTreeNode {
+		
+		private long leftSiblingNodeNumber = -1;
+		
+		private int index = -1;
+		
+		public final int getIndex() {
+			if (this.index < 0) {
+				final var left = this.getLeftSiblingNodeNumber();
+				
+				if (0 == left) {
+					this.index = 0;
+				} else {
+					final var leftSwingNode = swingNodes.get(left);
+					
+					if (null != leftSwingNode) {
+						final var leftIndex = leftSwingNode.getIndex();
+						
+						if (0 <= leftIndex) {
+							this.index = 1 + leftIndex;
+						}
+					}
+				}
+			}
+			
+			return this.index;
+		}
+		
+		private final long getLeftSiblingNodeNumber() {
+			if (this.leftSiblingNodeNumber < 0L) {
+				final var recItem = (RecItem) this.getUserObject();
+				
+				if (null != recItem) {
+					final var properties = recItem.rec().getRecData().getProperties();
+					
+					this.leftSiblingNodeNumber = ((LongVar) properties.get("LeftSiblingNodeNumber")).get();
+				}
+			}
+			
+			return this.leftSiblingNodeNumber;
+		}
+		
+	}
+	
+	/**
 	 * @author 2oLDNncs 20250316
 	 */
 	private static record RecItem(int index, Rec rec) {
@@ -400,6 +474,9 @@ public final class SysadataViewer extends JPanel {
 			appendProp(properties, "ProgramName", result);
 			appendProp(properties, "LibraryName", result);
 			appendProp(properties, "LibraryDdname", result);
+			appendProp(properties, "FirstTokenNumber", result);
+			appendProp(properties, "LastTokenNumber", result);
+			appendProp(properties, "RecordType", result);
 			
 			return result.toString();
 		}
@@ -411,7 +488,12 @@ public final class SysadataViewer extends JPanel {
 				sb.append("(");
 				sb.append(key);
 				sb.append(":");
-				sb.append(vProp.toString());
+				try {
+					sb.append(vProp.toString());
+				} catch (final Exception e) {
+					e.printStackTrace();
+					sb.append("<span style=\"color:red\">?</span>");
+				}
 				sb.append(")");
 			}
 		}
