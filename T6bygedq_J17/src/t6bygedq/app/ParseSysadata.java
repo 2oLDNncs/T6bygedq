@@ -233,6 +233,8 @@ public final class ParseSysadata {
 			{
 				final var rd = rec.setAndGetRecData(RecData_X0038_Source.class);
 				
+				rd.vSourceRecord.set("      * TEST");
+				
 				rec.write(out);
 			}
 			

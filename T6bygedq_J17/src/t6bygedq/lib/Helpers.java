@@ -16,6 +16,10 @@ import java.util.Objects;
  */
 public final class Helpers {
 	
+	public static final <E> E[] array(@SuppressWarnings("unchecked") final E... elements) {
+		return elements;
+	}
+	
 	@SuppressWarnings("unchecked")
 	public static final <T> T cast(final Object object) {
 		return (T) object;

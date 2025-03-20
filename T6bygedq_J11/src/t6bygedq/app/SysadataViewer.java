@@ -1,9 +1,14 @@
 package t6bygedq.app;
 
+import static t6bygedq.lib.Helpers.array;
+
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Dimension;
+import java.awt.Window;
 import java.awt.event.ActionEvent;
+import java.awt.event.WindowAdapter;
+import java.awt.event.WindowEvent;
 import java.io.File;
 import java.io.IOException;
 import java.util.HashMap;
@@ -41,7 +46,6 @@ import javax.swing.tree.TreeSelectionModel;
 
 import t6bygedq.app.ParseSysadata.RecReader;
 import t6bygedq.lib.ArgsParser;
-import t6bygedq.lib.Helpers;
 import t6bygedq.lib.SwingHelpers;
 import t6bygedq.lib.cbl.LongVar;
 import t6bygedq.lib.cbl.Rec;
@@ -54,7 +58,9 @@ import t6bygedq.lib.cbl.RecData_X0042_Symbol;
  */
 public final class SysadataViewer extends JPanel {
 	
-	private final JTable recTable = new JTable(new DefaultTableModel(new Object[] {"Rec"}, 0));
+	private final JTable recTable = new JTable(new DefaultTableModel(array("Rec"), 0));
+	
+	private final JTable flowTable = new JTable(new DefaultTableModel(array("Flow"), 0));
 	
 	private final JTree parseTreeView = new JTree(new DefaultTreeModel(new SwingNode(), false));
 	
@@ -66,83 +72,15 @@ public final class SysadataViewer extends JPanel {
 	
 	private final Map<Long, SwingNode> swingNodes = new HashMap<>();
 	
-	private Pattern filterPattern = Pattern.compile("");
-	
 	public SysadataViewer() {
 		super(new BorderLayout());
 		
-		final var listPanel = new JPanel(new BorderLayout());
-		
-		final var filter = new JTextField();
-		
-		listPanel.add(filter, BorderLayout.NORTH);
-		listPanel.add(SwingHelpers.scrollable(this.recTable), BorderLayout.CENTER);
-		
-		this.explorerView.addTab("List", listPanel);
+		this.explorerView.addTab("List", new FilteringView(this.recTable));
 		this.explorerView.addTab("Tree", SwingHelpers.scrollable(this.parseTreeView));
+		this.explorerView.addTab("Flow", new FilteringView(this.flowTable));
 		
-		recTable.setAutoCreateRowSorter(true);
-		
-		((TableRowSorter<DefaultTableModel>) this.recTable.getRowSorter()).setRowFilter(new RowFilter<>() {
-			
-			@Override
-			public final boolean include(final Entry<? extends DefaultTableModel, ? extends Integer> entry) {
-				return filterPattern.matcher(entry.getStringValue(0)).find();
-			}
-			
-		});
-		
-		filter.addCaretListener(new CaretListener() {
-			
-			private final Timer timer = new Timer(150, this::update);
-			
-			@Override
-			public final void caretUpdate(final CaretEvent e) {
-				this.timer.restart();
-			}
-			
-			private final void update(final ActionEvent e) {
-				try {
-					filterPattern = Pattern.compile(filter.getText(), Pattern.CASE_INSENSITIVE);
-					recTable.getRowSorter().allRowsChanged();
-					filter.setForeground(null);
-				} catch (final Exception e1) {
-					Helpers.ignore(e1);
-					filter.setForeground(Color.RED);
-				}
-			}
-			
-		});
-		
-		this.recTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-		this.recTable.getSelectionModel().addListSelectionListener(new ListSelectionListener() {
-			
-			@Override
-			public final void valueChanged(final ListSelectionEvent e) {
-				if (!e.getValueIsAdjusting()) {
-					final var selectedRow = recTable.getSelectedRow();
-					
-					if (0 <= selectedRow) {
-						updateContentView((RecItem) recTable.getValueAt(selectedRow, 0));
-					}
-				}
-			}
-			
-		});
-		
-		this.parseTreeView.getSelectionModel().setSelectionMode(TreeSelectionModel.SINGLE_TREE_SELECTION);
-		this.parseTreeView.addTreeSelectionListener(new TreeSelectionListener() {
-			
-			@Override
-			public final void valueChanged(final TreeSelectionEvent e) {
-				final var selected = parseTreeView.getSelectionPath();
-				
-				if (null != selected) {
-					updateContentView((RecItem) ((DefaultMutableTreeNode) selected.getLastPathComponent()).getUserObject());
-				}
-			}
-			
-		});
+		this.onSelectUpdateContentView(this.recTable);
+		this.onSelectUpdateContentView(this.parseTreeView);
 		
 		this.swingNodes.put(0L, (SwingNode) this.parseTreeView.getModel().getRoot());
 		
@@ -155,6 +93,40 @@ public final class SysadataViewer extends JPanel {
 				this.explorerView,
 				SwingHelpers.scrollable(this.contentView)),
 				BorderLayout.CENTER);
+	}
+	
+	private final void onSelectUpdateContentView(final JTable table) {
+		table.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+		table.getSelectionModel().addListSelectionListener(new ListSelectionListener() {
+			
+			@Override
+			public final void valueChanged(final ListSelectionEvent e) {
+				if (!e.getValueIsAdjusting()) {
+					final var selectedRow = table.getSelectedRow();
+					
+					if (0 <= selectedRow) {
+						updateContentView((RecItem) table.getValueAt(selectedRow, 0));
+					}
+				}
+			}
+			
+		});
+	}
+	
+	private final void onSelectUpdateContentView(final JTree tree) {
+		tree.getSelectionModel().setSelectionMode(TreeSelectionModel.SINGLE_TREE_SELECTION);
+		tree.addTreeSelectionListener(new TreeSelectionListener() {
+			
+			@Override
+			public final void valueChanged(final TreeSelectionEvent e) {
+				final var selected = tree.getSelectionPath();
+				
+				if (null != selected) {
+					updateContentView((RecItem) ((DefaultMutableTreeNode) selected.getLastPathComponent()).getUserObject());
+				}
+			}
+			
+		});
 	}
 	
 	private final void updateContentView(final RecItem selectedRecItem) {
@@ -244,7 +216,7 @@ public final class SysadataViewer extends JPanel {
 	public final void addRec(final Rec rec) {
 		final var recItem = new RecItem(this.getRecTableModel().getRowCount(), rec);
 		
-		this.getRecTableModel().addRow(new Object[] { recItem });
+		this.getRecTableModel().addRow(array(recItem));
 		
 		if (rec.getRecData() instanceof RecData_X0020_ExternalSymbol
 				|| rec.getRecData() instanceof RecData_X0042_Symbol) {
@@ -353,11 +325,17 @@ public final class SysadataViewer extends JPanel {
 				((JFrame) w).setTitle(jfc.getSelectedFile().getName());
 			});
 			
-			if (!loadFromFile(jfc.getSelectedFile(), rr, rec -> {
+			final var canceled = new AtomicBoolean(false);
+			
+			onWindowClosingSetCanceled(w, canceled); // TODO remove listener when loading done
+			
+			loadFromFile(jfc.getSelectedFile(), rr, rec -> {
 				SwingUtilities.invokeLater(() -> {
 					sv.addRec(rec);
 				});
-			})) {
+			}, canceled);
+			
+			if (canceled.get()) {
 				SwingUtilities.invokeLater(() -> {
 					w.dispose();
 				});
@@ -365,7 +343,8 @@ public final class SysadataViewer extends JPanel {
 		}
 	}
 	
-	public static final boolean loadFromFile(final File file, final RecReader recReader, final Consumer<Rec> action) throws IOException {
+	public static final void loadFromFile(final File file, final RecReader recReader,
+			final Consumer<Rec> action, final AtomicBoolean canceled) throws IOException {
 		try (final var it = new ParseSysadata.ProgressiveRecReader(file, recReader)) {
 			final var progressBar = new JProgressBar(0, (int) it.getTotalBytes());
 			
@@ -373,17 +352,14 @@ public final class SysadataViewer extends JPanel {
 			progressBar.setPreferredSize(new Dimension(400, 20));
 			
 			final var w = SwingHelpers.show(progressBar, "Loading...");
-			final var canceled = new AtomicBoolean(false);
+			
+			onWindowClosingSetCanceled(w, canceled);
 			
 			while (it.hasNext() && !canceled.get()) {
 				final var progress = (int) it.getBytesRead();
 				
 				SwingUtilities.invokeLater(() -> {
 					progressBar.setValue(progress);
-					
-					if (!w.isDisplayable()) {
-						canceled.set(true);
-					}
 				});
 				
 				action.accept(it.next());
@@ -392,13 +368,24 @@ public final class SysadataViewer extends JPanel {
 			SwingUtilities.invokeLater(() -> {
 				w.dispose();
 			});
-			
-			if (canceled.get()) {
-				return false;
-			}
 		}
-		
-		return true;
+	}
+	
+	private static final void onWindowClosingSetCanceled(final Window w, final AtomicBoolean canceled) {
+		onWindowClosingAction(w, __ -> {
+			canceled.set(true);
+		});
+	}
+	
+	private static final void onWindowClosingAction(final Window w, final Consumer<WindowEvent> action) {
+		w.addWindowListener(new WindowAdapter() {
+			
+			@Override
+			public final void windowClosing(final WindowEvent e) {
+				action.accept(e);
+			}
+			
+		});
 	}
 	
 	/**
@@ -494,6 +481,7 @@ public final class SysadataViewer extends JPanel {
 			appendProp(properties, "FirstTokenNumber", result);
 			appendProp(properties, "LastTokenNumber", result);
 			appendProp(properties, "RecordType", result);
+			appendProp(properties, "SourceRecord", result);
 			
 			return result.toString();
 		}
@@ -514,6 +502,73 @@ public final class SysadataViewer extends JPanel {
 				sb.append(")");
 			}
 		}
+		
+	}
+	
+	/**
+	 * @author 2oLDNncs 20250320
+	 */
+	public static final class FilteringView extends JPanel {
+		
+		private Pattern filterPattern = Pattern.compile("");
+		
+		public FilteringView(final JTable table) {
+			super(new BorderLayout());
+			
+			table.setAutoCreateRowSorter(true);
+			
+			final var rs = (TableRowSorter<DefaultTableModel>) table.getRowSorter();
+			
+			rs.setSortable(0, false);
+			
+			rs.setRowFilter(new RowFilter<>() {
+				
+				@Override
+				public final boolean include(final Entry<? extends DefaultTableModel, ? extends Integer> entry) {
+					return filterPattern.matcher(entry.getStringValue(0)).find();
+				}
+				
+			});
+			
+			final var filter = new JTextField();
+			
+			filter.setToolTipText(FILTER_TOOL_TIP_TEXT_DEFAULT);
+			
+			filter.addCaretListener(new CaretListener() {
+				
+				private final Timer timer = new Timer(150, this::update);
+				
+				{
+					this.timer.setRepeats(false);
+				}
+				
+				@Override
+				public final void caretUpdate(final CaretEvent e) {
+					this.timer.restart();
+				}
+				
+				private final void update(final ActionEvent e) {
+					try {
+						filterPattern = Pattern.compile(filter.getText(), Pattern.CASE_INSENSITIVE);
+						table.getRowSorter().allRowsChanged();
+						
+						filter.setForeground(null);
+						
+						filter.setToolTipText(FILTER_TOOL_TIP_TEXT_DEFAULT);
+					} catch (final Exception e1) {
+						filter.setForeground(Color.RED);
+						
+						filter.setToolTipText(e1.getMessage());
+					}
+				}
+				
+			});
+			
+			this.add(filter, BorderLayout.NORTH);
+			this.add(SwingHelpers.scrollable(table), BorderLayout.CENTER);
+		}
+		
+		private static final String FILTER_TOOL_TIP_TEXT_DEFAULT = "Regular expression, not case sensitive";
 		
 	}
 	
