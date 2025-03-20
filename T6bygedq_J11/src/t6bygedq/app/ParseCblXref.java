@@ -37,6 +37,7 @@ public final class ParseCblXref {
 	public static final String ARG_FLOWS = "-Flows";
 	public static final String ARG_MORE_FLOWS = "-MoreFlows";
 	public static final String ARG_FILTER = "-Filter";
+	public static final String ARG_FILTER_OUT = "-FilterOut";
 	public static final String ARG_FLOWS_GV = "-FlowsGV";
 	
 	public static final void main(final String... args) throws IOException {
@@ -48,6 +49,7 @@ public final class ParseCblXref {
 		ap.setDefault(ARG_MORE_FLOWS, "data/xref_more_flows.txt");
 		ap.setDefault(ARG_FLOWS_GV, "data/xref_flows.gv");
 		ap.setDefault(ARG_FILTER, "");
+		ap.setDefault(ARG_FILTER_OUT, "");
 		
 		final List<List<Object>> flows = new ArrayList<>();
 		
@@ -101,31 +103,34 @@ public final class ParseCblXref {
 		}
 		
 		if (!ap.isBlank(ARG_FLOWS_GV)) {
-			if (!ap.isBlank(ARG_FILTER)) {
-				final var filter = Pattern.compile(ap.getString(ARG_FILTER), Pattern.CASE_INSENSITIVE);
-				final var filteredNodes = computeFilteredNodes(flows, filter);
+			final var filter = ap.isBlank(ARG_FILTER) ? null :
+				Pattern.compile(ap.getString(ARG_FILTER), Pattern.CASE_INSENSITIVE);
+			final var filterOut = ap.isBlank(ARG_FILTER_OUT) ? null :
+				Pattern.compile(ap.getString(ARG_FILTER_OUT), Pattern.CASE_INSENSITIVE);
+			
+			if (null != filter || null != filterOut) {
+				final var filteredNodes = filterNodes(flows, filter, filterOut);
+				final var filteredFlows = new ArrayList<List<Object>>();
 				
-				{
-					final List<List<Object>> filteredFlows = new ArrayList<>();
+				flows.forEach(flow -> {
+					final var src = Objects.toString(flow.get(3));
+					final var dst = Objects.toString(flow.get(4));
 					
-					flows.forEach(flow -> {
-						final var src = Objects.toString(flow.get(3));
-						final var dst = Objects.toString(flow.get(4));
-						
-						if (filteredNodes.contains(src) && filteredNodes.contains(dst)) {
-							filteredFlows.add(flow);
-						}
-					});
-					
-					flows2gv(filteredFlows, ap.getFile(ARG_FLOWS_GV));
-				}
+					if (filteredNodes.contains(src) && filteredNodes.contains(dst)) {
+						filteredFlows.add(flow);
+					}
+				});
+				
+				flows2gv(filteredFlows, ap.getFile(ARG_FLOWS_GV));
 			} else {
 				flows2gv(flows, ap.getFile(ARG_FLOWS_GV));
 			}
 		}
 	}
 	
-	private static final Collection<String> computeFilteredNodes(final List<List<Object>> flows, final Pattern filter) {
+	private static final Collection<String> filterNodes(final List<List<Object>> flows,
+			final Pattern filter, final Pattern filterOut) {
+		final var result = new HashSet<String>();
 		final var nodes = new HashSet<String>();
 		final var backward = new HashMap<String, Collection<String>>();
 		final var forward = new HashMap<String, Collection<String>>();
@@ -141,32 +146,34 @@ public final class ParseCblXref {
 			forward.computeIfAbsent(src, __ -> new HashSet<>()).add(dst);
 		});
 		
-		final var result = new HashSet<String>();
-		
 		{
 			final var seeds = new HashSet<String>();
+			final var chaff = new HashSet<String>();
 			
 			for (final var node : nodes) {
-				if (filter.matcher(node).find()) {
+				if (null != filterOut && filterOut.matcher(node).find()) {
+					chaff.add(node);
+				} else if (null == filter || filter.matcher(node).find()) {
 					seeds.add(node);
 				}
 			}
 			
-			result.addAll(collectConnected(seeds, backward));
-			result.addAll(collectConnected(seeds, forward));
+			result.addAll(collectConnected(seeds, chaff, backward));
+			result.addAll(collectConnected(seeds, chaff, forward));
 		}
 		
 		return result;
 	}
 	
-	private static final <T> Collection<T> collectConnected(final Collection<T> seeds, final Map<T, Collection<T>> next) {
+	private static final <T> Collection<T> collectConnected(final Collection<T> seeds, final Collection<T> chaff,
+			final Map<T, Collection<T>> next) {
 		final var result = new HashSet<T>();
 		final var todo = new ArrayList<>(seeds);
 		
 		for (var i = 0; i < todo.size(); i += 1) {
 			final var node = todo.get(i);
 			
-			if (result.add(node)) {
+			if (!chaff.contains(node) && result.add(node)) {
 				todo.addAll(next.getOrDefault(node, Collections.emptySet()));
 			}
 		}
