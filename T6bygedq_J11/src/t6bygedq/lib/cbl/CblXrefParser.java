@@ -9,10 +9,11 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.function.UnaryOperator;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import t6bygedq.lib.Helpers;
+import t6bygedq.lib.Rgx;
 import t6bygedq.lib.Helpers.Debug;
 
 /**
@@ -26,63 +27,60 @@ public final class CblXrefParser {
 	private final Map<Integer, Def> programs = new LinkedHashMap<>();
 	private final Map<Integer, Def> verbs = new LinkedHashMap<>();
 	private Def currentDef = null;
-	private String parseMode = null;
+	private String refParseMode = null;
+	
+	private final LineMatcher lmMapTrigger = new LineMatcher(P_MAP_TRIGGER);
+	private final LineMatcher lmMap = new LineMatcher(P_MAP);
+	private final LineMatcher lmRefTrigger = new LineMatcher(P_REF_TRIGGER);
+	private final LineMatcher lmRefs = new LineMatcher(P_REFS);
+	private final LineMatcher lmProcedure = new LineMatcher(P_PROCEDURE);
+	private int mapMode = 0;
 	
 	public final void parse(final String line) {
 		dprintlnf("%s", line);
 		
-		Matcher matcher = null;
-		
-		if (null == matcher) {
-			matcher = P_TRIGGER.matcher(line);
-			
-			if (matcher.matches()) {
-				this.parseMode = matcher.group(G_PARSE_MODE);
-				dprintlnf("--> TRIGGER (%s)", this.parseMode);
-			} else {
-				matcher = null;
-			}
+		if (0 < this.mapMode) {
+			this.mapMode -= 1;
 		}
 		
-		if (null == matcher && null != this.parseMode) {
-			matcher = P_REFS.matcher(line);
+		if (this.lmMapTrigger.matches(line)) {
+			this.mapMode = 2;
+			dprintlnf("--> MAP_TRIGGER (%s)", line);
+		} else if (0 < this.mapMode && this.lmMap.matches(line)) {
+			this.mapMode = 2;
+			dprintlnf("--> MAP (%s %s %s)",
+					this.lmMap.group(G_MAP_LINE_ID),
+					this.lmMap.group(G_MAP_HIERARCHY),
+					this.lmMap.group(G_MAP_NAME));
+			// TODO Add def
+		} else if (this.lmRefTrigger.matches(line)) {
+			this.refParseMode = this.lmRefTrigger.group(G_PARSE_MODE);
+			dprintlnf("--> REF_TRIGGER (%s)", this.refParseMode);
+		} else if (null != this.refParseMode && this.lmRefs.matches(line)) {
+			if (null != this.lmRefs.group(G_DEF_LINE_ID)) {
+				this.addNewDef(this.lmRefs::group);
+			}
 			
-			if (matcher.matches()) {
-				if (null != matcher.group(G_DEF_LINE_ID)) {
-					this.addNewDef(matcher);
-				}
+			if (null != this.currentDef) {
+				parseRefs(this.lmRefs.group(G_REFS), this.currentDef);
 				
-				if (null != this.currentDef) {
-					parseRefs(matcher.group(G_REFS), this.currentDef);
-					
-					dprintlnf("--> REFS (%s) (%s) %s",
-							this.currentDef.getId(),
-							this.currentDef.getName(),
-							this.currentDef.getRefs());
-				}
-			} else {
-				matcher = null;
+				dprintlnf("--> REFS (%s) (%s) %s",
+						this.currentDef.getId(),
+						this.currentDef.getName(),
+						this.currentDef.getRefs());
 			}
-		}
-		
-		if (null == matcher) {
-			matcher = P_PROCEDURE.matcher(line);
-			
-			if (matcher.matches()) {
-//				TODO Determine lineId
-//				this.addNewDef(this.procedures, sLineId, CblConstants.KW_PROCEDURE);
-			} else {
-				matcher = null;
-			}
+		} else if (this.lmProcedure.matches(line)) {
+			// TODO Determine lineId
+//			this.addNewDef(this.procedures, sLineId, CblConstants.KW_PROCEDURE);
 		}
 	}
 	
-	private final void addNewDef(final Matcher matcher) {
+	private final void addNewDef(final UnaryOperator<String> matcherGroup) {
 		final Map<Integer, Def> target = this.selectParseTarget();
 		
 		if (null != target) {
-			final var sLineId = matcher.group(G_DEF_LINE_ID);
-			final var name = matcher.group(G_DEF_NAME);
+			final var sLineId = matcherGroup.apply(G_DEF_LINE_ID);
+			final var name = matcherGroup.apply(G_DEF_NAME);
 			
 			this.addNewDef(target, sLineId, name);
 		}
@@ -91,19 +89,19 @@ public final class CblXrefParser {
 	private final void addNewDef(final Map<Integer, Def> target, final String sLineId, final String name) {
 		final int lineId;
 		
-		if (C_EXTERNAL.equals(sLineId) || PM_VERBS.equals(this.parseMode)) {
+		if (C_EXTERNAL.equals(sLineId) || PM_VERBS.equals(this.refParseMode)) {
 			lineId = -target.size() - 1;
 		} else {
 			lineId = Integer.parseInt(sLineId);
 		}
 		
-		this.currentDef = new Def(lineId, this.parseMode, name);
+		this.currentDef = new Def(lineId, this.refParseMode, name);
 		
 		target.put(this.currentDef.getId(), this.currentDef);
 	}
 	
 	private final Map<Integer, Def> selectParseTarget() {
-		switch (this.parseMode) {
+		switch (this.refParseMode) {
 		case PM_DATA_NAMES:
 			return this.dataItems;
 		case PM_PROCEDURES:
@@ -172,138 +170,56 @@ public final class CblXrefParser {
 	
 	public static final String C_EXTERNAL = "EXTERNAL";
 	
-	public static final Pattern P_TRIGGER = Pattern.compile(rgxLine(rgxSeq(
-			rgxRep0(" "),
-			rgxOr("Defined", "Count"),
-			rgxRep1(" "),
+	public static final String G_MAP_LINE_ID = "MapLineId";
+	public static final String G_MAP_HIERARCHY = "Hierarchy";
+	public static final String G_MAP_NAME = "Name";
+	
+	public static final Pattern P_MAP_TRIGGER = Pattern.compile(Rgx.line(Rgx.seq(
+			Rgx.rep0(" "),
+			String.join(Rgx.rep1(" "), "LineID", "Data Name", "Locator", "Structure", "Definition", "Data Type", "Attributes"),
+			Rgx.rep0(" "))));
+	
+	public static Pattern P_MAP = Pattern.compile(Rgx.line(Rgx.seq(
+			Rgx.rep0(" "),
+			String.join(Rgx.rep1(" "),
+					Rgx.grp(G_MAP_LINE_ID, Rgx.rep1("\\d")),
+					Rgx.grp(G_MAP_HIERARCHY, Rgx.rep1("\\d")),
+					Rgx.grp(G_MAP_NAME, Rgx.rep1("[^ .]")),
+					Rgx.rep0(".")),
+			Rgx.rep0(" "))));
+	
+	public static final Pattern P_REF_TRIGGER = Pattern.compile(Rgx.line(Rgx.seq(
+			Rgx.rep0(" "),
+			Rgx.or("Defined", "Count"),
+			Rgx.rep1(" "),
 			"Cross-reference of ",
-			rgxGrp(G_PARSE_MODE, rgxOr(PM_DATA_NAMES, PM_PROCEDURES, PM_PROGRAMS, PM_VERBS)),
-			rgxRep1(" "),
+			Rgx.grp(G_PARSE_MODE, Rgx.or(PM_DATA_NAMES, PM_PROCEDURES, PM_PROGRAMS, PM_VERBS)),
+			Rgx.rep1(" "),
 			"References",
-			rgxRep0(" "))));
-	private static final String R_REF = rgxGrp(G_REF,rgxSeq(
-			rgxGrp(G_REF_USAGE, rgxRep01("[A-Z]")),
-			rgxGrp(G_REF_LINE_ID, rgxRep1("\\d"))));
+			Rgx.rep0(" "))));
+	private static final String R_REF = Rgx.grp(G_REF,Rgx.seq(
+			Rgx.grp(G_REF_USAGE, Rgx.rep01("[A-Z]")),
+			Rgx.grp(G_REF_LINE_ID, Rgx.rep1("\\d"))));
 	public static final Pattern P_REF = Pattern.compile(R_REF, Pattern.CASE_INSENSITIVE);
 	public static final Pattern P_REFS = Pattern.compile(
-			rgxLine(rgxSeq( // 2 cases: Definition with LineId, Name and references; Continuation with references only
-					rgxOr(
-							rgxSeq( // Definition
-									rgxRep(0, 9, " "),
-									rgxGrp(G_DEF_LINE_ID, rgxOr(
+			Rgx.line(Rgx.seq( // 2 cases: Definition with LineId, Name and references; Continuation with references only
+					Rgx.or(
+							Rgx.seq( // Definition
+									Rgx.rep(0, 9, " "),
+									Rgx.grp(G_DEF_LINE_ID, Rgx.or(
 											C_EXTERNAL,
-											rgxRep1("\\d"))),
-									rgxRep1(" "),
-									rgxGrp(G_DEF_NAME, rgxRep1("[^ .]")),
-									rgxRep1("[ .]")),
-							rgxRep(40, 42, " ")), // No definition: continuation of previous line
-					rgxGrp(G_REFS, rgxRep0(rgxSeq(
+											Rgx.rep1("\\d"))),
+									Rgx.rep1(" "),
+									Rgx.grp(G_DEF_NAME, Rgx.rep1("[^ .]")),
+									Rgx.rep1("[ .]")),
+							Rgx.rep(40, 42, " ")), // No definition: continuation of previous line
+					Rgx.grp(G_REFS, Rgx.rep0(Rgx.seq(
 							" ",
 							R_REF))))), // References
 			Pattern.CASE_INSENSITIVE);
 	public static final Pattern P_PROCEDURE = Pattern.compile(
-			rgxStart(rgxSeq("  ", rgxRep(21, 21, "."), rgxRepN(1, " "), CblConstants.KW_PROCEDURE)),
+			Rgx.start(Rgx.seq("  ", Rgx.rep(21, 21, "."), Rgx.repN(1, " "), CblConstants.KW_PROCEDURE)),
 			Pattern.CASE_INSENSITIVE);
-	
-	private static final String rgxRep01(final String regex) {
-		return rgxRep(0, 1, regex);
-	}
-	
-	private static final String rgxRep0(final String regex) {
-		return rgxRepN(0, regex);
-	}
-	
-	private static final String rgxRep1(final String regex) {
-		return rgxRepN(1, regex);
-	}
-	
-	private static final String rgxRepN(final int min, final String regex) {
-		return rgxRep(min, Integer.MAX_VALUE, regex);
-	}
-	
-	private static final String rgxRep(final int min, final int max, final String regex) {
-		final var grp = rgxNcgrp(regex);
-		
-		if (Integer.MAX_VALUE == max) {
-			if (0 == min) {
-				return String.format("%s*", grp);
-			}
-			
-			if (1 == min) {
-				return String.format("%s+", grp);
-			}
-			
-			return String.format("%s{%s,}", grp, min);
-		}
-		
-		if (0 == min && 1 == max) {
-			return String.format("%s?", grp);
-		}
-		
-		if (min == max) {
-			return String.format("%s{%s}", grp, min);
-		}
-		
-		return String.format("%s{%s,%s}", grp, min, max);
-	}
-	
-	/**
-	 * Full line
-	 */
-	private static final String rgxLine(final String regex) {
-		return rgxStart(rgxEnd(regex));
-	}
-	
-	/**
-	 * Line start
-	 */
-	private static final String rgxStart(final String regex) {
-		return String.format("^%s", regex);
-	}
-	
-	/**
-	 * Line end
-	 */
-	private static final String rgxEnd(final String regex) {
-		return String.format("%s$", regex);
-	}
-	
-	/**
-	 * Sequence
-	 */
-	private static final String rgxSeq(final String... regexes) {
-		return String.join("", regexes);
-	}
-	
-	/**
-	 * Union
-	 */
-	private static final String rgxOr(final String... regexes) {
-		return rgxNcgrp(String.join("|", Arrays.stream(regexes)
-				.map(CblXrefParser::rgxNcgrp)
-				.toArray(String[]::new)));
-	}
-	
-	/**
-	 * Named capturing group
-	 */
-	private static final String rgxGrp(final String name, final String regex) {
-		return String.format("(?<%s>%s)", name, regex);
-	}
-	
-	/**
-	 * Capturing group
-	 */
-	private static final String rgxGrp(final String regex) {
-		return String.format("(%s)", regex);
-	}
-	
-	/**
-	 * Non-capturing group
-	 */
-	private static final String rgxNcgrp(final String regex) {
-		return String.format("(?:%s)", regex);
-	}
 	
 	private static final List<Object> emptyContext = Arrays.asList(null, null, null);
 	
@@ -438,6 +354,31 @@ public final class CblXrefParser {
 		@Override
 		public final String toString() {
 			return String.format("%s%s", this.getUsage(), this.getId());
+		}
+		
+	}
+	
+	/**
+	 * @author 2oLDNncs 20250321
+	 */
+	public static final class LineMatcher {
+		
+		private final Pattern pattern;
+		
+		private Matcher matcher;
+		
+		public LineMatcher(final Pattern pattern) {
+			this.pattern = pattern;
+		}
+		
+		public final boolean matches(final CharSequence line) {
+			this.matcher = this.pattern.matcher(line);
+			
+			return this.matcher.matches();
+		}
+		
+		public final String group(final String name) {
+			return this.matcher.group(name);
 		}
 		
 	}
