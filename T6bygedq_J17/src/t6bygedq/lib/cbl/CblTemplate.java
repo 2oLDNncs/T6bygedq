@@ -249,7 +249,6 @@ public abstract class CblTemplate extends TextTemplate {
 		this.printFullLine(SEPARATOR_LINE);
 		this.procs.put(paragraphName, new CblXrefParser.Def(
 				this.getPrinter().getCurrentLineNumber(),
-				CblXrefParser.PM_PROCEDURES,
 				paragraphName));
 		this.printlnf("%s.", paragraphName);
 		this.printFullLine(SEPARATOR_LINE);
@@ -318,20 +317,8 @@ public abstract class CblTemplate extends TextTemplate {
 		this.print(itemName);
 	}
 	
-	private final CblXrefParser.Def getDef(final Map<String, CblXrefParser.Def> map, final String name) {
-		final String type;
-		
-		if (this.verbs.equals(map)) {
-			type = CblXrefParser.PM_VERBS;
-		} else if (this.items.equals(map)) {
-			type = CblXrefParser.PM_VERBS;
-		} else if (this.procs.equals(map)) {
-			type = CblXrefParser.PM_PROCEDURES;
-		} else {
-			throw new IllegalArgumentException("Unhandled map");
-		}
-		
-		return map.computeIfAbsent(name, k -> new CblXrefParser.Def(0, type, k));
+	private static final CblXrefParser.Def getDef(final Map<String, CblXrefParser.Def> map, final String name) {
+		return map.computeIfAbsent(name, k -> new CblXrefParser.Def(0, k));
 	}
 	
 	private final void addRefTo(final CblXrefParser.Def def, final String usage) {

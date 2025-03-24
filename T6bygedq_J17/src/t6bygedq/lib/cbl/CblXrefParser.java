@@ -5,6 +5,7 @@ import static t6bygedq.lib.Helpers.dprintlnf;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -19,7 +20,7 @@ import t6bygedq.lib.Helpers.Debug;
 /**
  * @author 2oLDNncs 20250106
  */
-@Debug(false)
+@Debug(true)
 public final class CblXrefParser {
 	
 	private final Map<Integer, Def> dataItems = new LinkedHashMap<>();
@@ -34,25 +35,28 @@ public final class CblXrefParser {
 	private final LineMatcher lmRefTrigger = new LineMatcher(P_REF_TRIGGER);
 	private final LineMatcher lmRefs = new LineMatcher(P_REFS);
 	private final LineMatcher lmProcedure = new LineMatcher(P_PROCEDURE);
-	private int mapMode = 0;
+	private final LineMatcher lmEndOfPage = new LineMatcher(P_END_OF_PAGE);
+	private boolean mapMode = false;
 	
 	public final void parse(final String line) {
 		dprintlnf("%s", line);
 		
-		if (0 < this.mapMode) {
-			this.mapMode -= 1;
-		}
-		
 		if (this.lmMapTrigger.matches(line)) {
-			this.mapMode = 2;
+			this.mapMode = true;
 			dprintlnf("--> MAP_TRIGGER (%s)", line);
-		} else if (0 < this.mapMode && this.lmMap.matches(line)) {
-			this.mapMode = 2;
+		} else if (this.mapMode && this.lmMap.matches(line)) {
+			final var lineId = Integer.parseInt(this.lmMap.group(G_MAP_LINE_ID));
+			final var level = Integer.parseInt(this.lmMap.group(G_MAP_LEVEL));
+			final var name = this.lmMap.group(G_MAP_NAME);
+			
 			dprintlnf("--> MAP (%s %s %s)",
-					this.lmMap.group(G_MAP_LINE_ID),
-					this.lmMap.group(G_MAP_HIERARCHY),
-					this.lmMap.group(G_MAP_NAME));
-			// TODO Add def
+					lineId,
+					level,
+					name);
+			
+			final var def = getDef(this.dataItems, lineId, name);
+			
+			def.setProp(G_MAP_LEVEL, level);
 		} else if (this.lmRefTrigger.matches(line)) {
 			this.refParseMode = this.lmRefTrigger.group(G_PARSE_MODE);
 			dprintlnf("--> REF_TRIGGER (%s)", this.refParseMode);
@@ -72,6 +76,11 @@ public final class CblXrefParser {
 		} else if (this.lmProcedure.matches(line)) {
 			// TODO Determine lineId
 //			this.addNewDef(this.procedures, sLineId, CblConstants.KW_PROCEDURE);
+		} else if (this.lmEndOfPage.matches(line)) {
+			dprintlnf("--> END OF PAGE");
+			
+			this.mapMode = false;
+			this.refParseMode = null;
 		}
 	}
 	
@@ -95,9 +104,13 @@ public final class CblXrefParser {
 			lineId = Integer.parseInt(sLineId);
 		}
 		
-		this.currentDef = new Def(lineId, this.refParseMode, name);
+		this.currentDef = getDef(target, lineId, name);
 		
 		target.put(this.currentDef.getId(), this.currentDef);
+	}
+	
+	private static final Def getDef(final Map<Integer, Def> target, final Integer lineId, final String name) {
+		return target.computeIfAbsent(lineId, k -> new Def(k, name));
 	}
 	
 	private final Map<Integer, Def> selectParseTarget() {
@@ -130,7 +143,8 @@ public final class CblXrefParser {
 		});
 		
 		this.dataItems.values().forEach(def -> {
-			ops.add(Arrays.asList(def.getId(), null, null, def.getName(), "!"));
+			ops.add(Arrays.asList(def.getId(), null, null, def.getName(),
+					"!" + def.getProp(G_MAP_LEVEL, 0)));
 			def.getRefs().forEach(ref -> {
 				ops.add(Arrays.asList(ref.getId(), null, null, def.getName(),
 						U_MODIFY.equals(ref.getUsage()) ? U_MODIFY : U_READ));
@@ -171,8 +185,13 @@ public final class CblXrefParser {
 	public static final String C_EXTERNAL = "EXTERNAL";
 	
 	public static final String G_MAP_LINE_ID = "MapLineId";
-	public static final String G_MAP_HIERARCHY = "Hierarchy";
+	public static final String G_MAP_LEVEL = "Level";
 	public static final String G_MAP_NAME = "Name";
+	
+	public static final Pattern P_END_OF_PAGE = Pattern.compile(Rgx.line(Rgx.seq(
+			Rgx.rep1("."),
+			String.join(Rgx.rep1("."), " Date ", " Time ", " Page ", Rgx.rep1("\\d")),
+			Rgx.rep0("."))));
 	
 	public static final Pattern P_MAP_TRIGGER = Pattern.compile(Rgx.line(Rgx.seq(
 			Rgx.rep0(" "),
@@ -183,10 +202,9 @@ public final class CblXrefParser {
 			Rgx.rep0(" "),
 			String.join(Rgx.rep1(" "),
 					Rgx.grp(G_MAP_LINE_ID, Rgx.rep1("\\d")),
-					Rgx.grp(G_MAP_HIERARCHY, Rgx.rep1("\\d")),
-					Rgx.grp(G_MAP_NAME, Rgx.rep1("[^ .]")),
-					Rgx.rep0(".")),
-			Rgx.rep0(" "))));
+					Rgx.grp(G_MAP_LEVEL, Rgx.rep1("\\d")),
+					Rgx.grp(G_MAP_NAME, Rgx.rep0("[^ .]"))),
+			Rgx.rep0("."))));
 	
 	public static final Pattern P_REF_TRIGGER = Pattern.compile(Rgx.line(Rgx.seq(
 			Rgx.rep0(" "),
@@ -212,7 +230,7 @@ public final class CblXrefParser {
 									Rgx.rep1(" "),
 									Rgx.grp(G_DEF_NAME, Rgx.rep1("[^ .]")),
 									Rgx.rep1("[ .]")),
-							Rgx.rep(40, 42, " ")), // No definition: continuation of previous line
+							Rgx.rep(40, 43, " ")), // No definition: continuation of previous line
 					Rgx.grp(G_REFS, Rgx.rep0(Rgx.seq(
 							" ",
 							R_REF))))), // References
@@ -230,7 +248,14 @@ public final class CblXrefParser {
 		
 		ops.forEach(row -> {
 			final var lineId = row.get(0);
+			final var proc = row.get(1);
+			final var verb = row.get(2);
 			final var obj = row.get(3);
+			final var op = row.get(4);
+			
+			if (null == proc && null == verb && op.toString().startsWith("!")) {
+				dprintlnf("DataItem: %s %s", obj, op);
+			}
 			
 			if (!lineId.equals(context.get(0)) && "".equals(obj)) {
 				updateFlows(context, srcs, dsts, flows);
@@ -240,8 +265,6 @@ public final class CblXrefParser {
 				context.clear();
 				context.addAll(row.subList(0, 3));
 			}
-			
-			final var op = row.get(4);
 			
 			if (U_READ.equals(op)) {
 				srcs.add(obj);
@@ -309,24 +332,31 @@ public final class CblXrefParser {
 	 */
 	public static final class Def extends Obj {
 		
-		private final String type;
-		
 		private final String name;
 		
 		private final Collection<Ref> refs = new ArrayList<>();
 		
-		public Def(final int id, final String type, final String name) {
-			super(id);
-			this.type = type;
-			this.name = name;
-		}
+		private final Map<String, Object> props = new HashMap<>();
 		
-		public final String getType() {
-			return this.type;
+		public Def(final int id, final String name) {
+			super(id);
+			this.name = name;
 		}
 		
 		public final String getName() {
 			return this.name;
+		}
+		
+		public final void setProp(final String key, final Object value) {
+			this.props.put(key, value);
+		}
+		
+		public final Object getProp(final String key) {
+			return this.props.get(key);
+		}
+		
+		public final Object getProp(final String key, final Object defaultValue) {
+			return this.props.getOrDefault(key, defaultValue);
 		}
 		
 		public final Collection<Ref> getRefs() {
