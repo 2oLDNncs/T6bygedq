@@ -336,15 +336,13 @@ public final class CblXrefParser {
 		
 		if (verbIsValid) {
 			if (srcs.isEmpty()) {
-				if (CblConstants.VB_SET.equalsIgnoreCase(verb)) {
-					if (1 == dsts.size()) {
-						final var parent = dataParents.get(dsts.iterator().next());
-						
-						if (null != parent) {
-							srcs.addAll(dsts);
-							dsts.clear();
-							dsts.add(parent);
-						}
+				if (CblConstants.VB_SET.equalsIgnoreCase(verb) && 1 == dsts.size()) {
+					final var parent = dataParents.get(dsts.iterator().next());
+					
+					if (null != parent) {
+						srcs.addAll(dsts);
+						dsts.clear();
+						dsts.add(parent);
 					}
 				}
 				
@@ -361,6 +359,19 @@ public final class CblXrefParser {
 				default:
 					dsts.add("?" + newId());
 					break;
+				}
+				
+//				new ArrayList<>(srcs).stream()
+//				.map(dataParents::get)
+//				.filter(Objects::nonNull)
+//				.forEach(srcs::add);
+				
+				for (final var src : srcs) {
+					final var parent = dataParents.get(src);
+					
+					if (null != parent) {
+						flows.add(new Flow(context.getModule(), context.getProc(), "#88", src.toString(), parent.toString()));
+					}
 				}
 			}
 			
