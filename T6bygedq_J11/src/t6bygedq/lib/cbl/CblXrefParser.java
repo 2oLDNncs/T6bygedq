@@ -17,6 +17,7 @@ import java.util.function.UnaryOperator;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import t6bygedq.lib.Helpers;
 import t6bygedq.lib.Rgx;
 import t6bygedq.lib.Helpers.Debug;
 
@@ -292,12 +293,17 @@ public final class CblXrefParser {
 				final var dataLevel = Integer.parseInt(usage);
 				
 				if ((int) dataDefinitionStack.peek()[1] < dataLevel) {
-					dataParents.put(dataName, dataDefinitionStack.peek()[0]);
-					dataDefinitionStack.push(array(dataName, dataLevel));
+					if (88 == dataLevel) {
+						dataParents.put(dataName, dataDefinitionStack.peek()[0]);
+					} else {
+						dataDefinitionStack.push(array(dataName, dataLevel));
+					}
 				} else {
 					while (dataLevel <= (int) dataDefinitionStack.peek()[1]) {
 						dataDefinitionStack.pop();
 					}
+					
+					dataDefinitionStack.push(array(dataName, dataLevel));
 				}
 			}
 			
@@ -316,7 +322,11 @@ public final class CblXrefParser {
 			}
 		});
 		
-		updateFlows(dataParents, context[0], srcs, dsts, flows);
+		if (null == context[0]) {
+			System.err.println(Helpers.dformat("Warning: no data"));
+		} else {
+			updateFlows(dataParents, context[0], srcs, dsts, flows);
+		}
 	}
 	
 	private static final void updateFlows(final Map<Object, Object> dataParents, final Op context, final Collection<Object> srcs,
@@ -328,15 +338,30 @@ public final class CblXrefParser {
 			if (srcs.isEmpty()) {
 				if (CblConstants.VB_SET.equalsIgnoreCase(verb)) {
 					if (1 == dsts.size()) {
-						srcs.addAll(dsts);
-						dsts.clear();
-						dsts.add(dataParents.get(srcs.iterator().next()));
+						final var parent = dataParents.get(dsts.iterator().next());
+						
+						if (null != parent) {
+							srcs.addAll(dsts);
+							dsts.clear();
+							dsts.add(parent);
+						}
 					}
-				} else {
+				}
+				
+				if (srcs.isEmpty()) {
 					srcs.add("?" + newId());
 				}
 			} else if (dsts.isEmpty()) {
-				dsts.add("?" + newId());
+				switch (verb.toUpperCase(Locale.ENGLISH)) {
+				case CblConstants.VB_CALL:
+				case CblConstants.VB_DISPLAY:
+				case CblConstants.VB_EVALUATE:
+				case CblConstants.VB_IF:
+					break;
+				default:
+					dsts.add("?" + newId());
+					break;
+				}
 			}
 			
 			srcs.forEach(src -> {
