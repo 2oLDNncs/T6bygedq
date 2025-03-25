@@ -244,39 +244,30 @@ public final class ParseCblXref {
 	public static final void processModule(final Path modulePath,
 			final List<List<Object>> ops, final List<List<Object>> flows) throws IOException {
 		final var moduleName = Helpers.removeExt(modulePath.getFileName().toString());
-		final var parser = new CblXrefParser();
+		final var parser = new CblXrefParser(moduleName);
 		
 		Files.lines(modulePath)
 		.forEach(parser::parse);
 		
-		final List<List<Object>> moduleOps = new ArrayList<>();
+		final List<CblXrefParser.Op> moduleOps = new ArrayList<>();
 		
 		parser.generateOps(moduleOps);
 		
 		moduleOps.stream()
-		.map(row -> {
-			return makeList(moduleName, row);
+		.map(op -> {
+			return Arrays.<Object>asList(op.getModule(), op.getLineId(), op.getProc(), op.getVerb(), op.getObj(), op.getUsage());
 		})
 		.forEach(ops::add);
 		
-		final var moduleFlows = new ArrayList<List<Object>>();
+		final var moduleFlows = new ArrayList<CblXrefParser.Flow>();
 		
 		CblXrefParser.generateFlows(moduleOps, moduleFlows);
 		
 		moduleFlows.stream()
-		.map(row -> {
-			return makeList(moduleName, row);
+		.map(flow -> {
+			return Arrays.<Object>asList(flow.getModule(), flow.getProc(), flow.getVerb(), flow.getSrc(), flow.getDst());
 		})
 		.forEach(flows::add);
-	}
-	
-	private static final List<Object> makeList(final Object head, final List<Object> tail) {
-		final var result = new ArrayList<>(1 + tail.size());
-		
-		result.add(head);
-		result.addAll(tail);
-		
-		return result;
 	}
 	
 }

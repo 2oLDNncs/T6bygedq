@@ -1,5 +1,6 @@
 package t6bygedq.lib.cbl;
 
+import static t6bygedq.lib.Helpers.array;
 import static t6bygedq.lib.Helpers.dprintlnf;
 
 import java.util.ArrayList;
@@ -10,6 +11,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Stack;
 import java.util.function.UnaryOperator;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -22,6 +24,8 @@ import t6bygedq.lib.Helpers.Debug;
  */
 @Debug(true)
 public final class CblXrefParser {
+	
+	private final String moduleName;
 	
 	private final Map<Integer, Def> dataItems = new LinkedHashMap<>();
 	private final Map<Integer, Def> procedures = new LinkedHashMap<>();
@@ -37,6 +41,14 @@ public final class CblXrefParser {
 	private final LineMatcher lmProcedure = new LineMatcher(P_PROCEDURE);
 	private final LineMatcher lmEndOfPage = new LineMatcher(P_END_OF_PAGE);
 	private boolean mapMode = false;
+	
+	public CblXrefParser(final String moduleName) {
+		this.moduleName = moduleName;
+	}
+	
+	public final String getModuleName() {
+		return this.moduleName;
+	}
 	
 	public final void parse(final String line) {
 		dprintlnf("%s", line);
@@ -54,7 +66,7 @@ public final class CblXrefParser {
 					level,
 					name);
 			
-			final var def = getDef(this.dataItems, lineId, name);
+			final var def = this.getDef(this.dataItems, lineId, name);
 			
 			def.setProp(G_MAP_LEVEL, level);
 		} else if (this.lmRefTrigger.matches(line)) {
@@ -104,13 +116,16 @@ public final class CblXrefParser {
 			lineId = Integer.parseInt(sLineId);
 		}
 		
-		this.currentDef = getDef(target, lineId, name);
+		this.currentDef = this.getDef(target, lineId, name);
 		
 		target.put(this.currentDef.getId(), this.currentDef);
 	}
 	
-	private static final Def getDef(final Map<Integer, Def> target, final Integer lineId, final String name) {
-		return target.computeIfAbsent(lineId, k -> new Def(k, name));
+	private final Def getDef(final Map<Integer, Def> target, final Integer lineId, final String name) {
+		final var nonemptyName = "".equals(name) || CblConstants.KW_FILLER.equalsIgnoreCase(name) ?
+				(this.getModuleName() + "@" + lineId) : name;
+		
+		return target.computeIfAbsent(lineId, k -> new Def(k, nonemptyName));
 	}
 	
 	private final Map<Integer, Def> selectParseTarget() {
@@ -128,39 +143,41 @@ public final class CblXrefParser {
 		return null;
 	}
 	
-	public final void generateOps(final List<List<Object>> ops) {
+	public final void generateOps(final List<Op> ops) {
 		this.verbs.values().forEach(def -> {
 			def.getRefs().forEach(ref -> {
-				ops.add(Arrays.asList(ref.getId(), null, def.getName(), "", ref.getUsage()));
+				ops.add(new Op(this.getModuleName(), ref.getId(), null, def.getName(), "", ref.getUsage()));
 			});
 		});
 		
 		this.procedures.values().forEach(def -> {
-			ops.add(Arrays.asList(def.getId(), def.getName(), "", "", "!"));
+			ops.add(new Op(this.getModuleName(), def.getId(), def.getName(), "", "#proc", ""));
 			def.getRefs().forEach(ref -> {
-				ops.add(Arrays.asList(ref.getId(), null, null, def.getName(), ref.getUsage()));
+				ops.add(new Op(this.getModuleName(), ref.getId(), null, null, def.getName(), ref.getUsage()));
 			});
 		});
 		
 		this.dataItems.values().forEach(def -> {
-			ops.add(Arrays.asList(def.getId(), null, null, def.getName(),
-					"!" + def.getProp(G_MAP_LEVEL, 0)));
+			ops.add(new Op(this.getModuleName(), def.getId(), null, "#data", def.getName(),
+					"" + def.getProp(G_MAP_LEVEL, 0)));
 			def.getRefs().forEach(ref -> {
-				ops.add(Arrays.asList(ref.getId(), null, null, def.getName(),
+				ops.add(new Op(this.getModuleName(), ref.getId(), null, null, def.getName(),
 						U_MODIFY.equals(ref.getUsage()) ? U_MODIFY : U_READ));
 			});
 		});
 		
-		ops.sort((r1, r2) -> Integer.compare((int) r1.get(0), (int) r2.get(0)));
+		ops.sort((r1, r2) -> r1.getLineId().compareTo(r2.getLineId()));
 		
 		for (var i = 1; i < ops.size(); i += 1) {
 			final var previousRow = ops.get(i - 1);
 			final var currentRow = ops.get(i);
 			
-			for (var j = 1; j < currentRow.size(); j += 1) {
-				if (null == currentRow.get(j)) {
-					currentRow.set(j, previousRow.get(j));
-				}
+			if (null == currentRow.getProc()) {
+				currentRow.setProc(previousRow.getProc());
+			}
+			
+			if (null == currentRow.getVerb()) {
+				currentRow.setVerb(previousRow.getVerb());
 			}
 		}
 	}
@@ -239,55 +256,87 @@ public final class CblXrefParser {
 			Rgx.start(Rgx.seq("  ", Rgx.rep(21, 21, "."), Rgx.repN(1, " "), CblConstants.KW_PROCEDURE)),
 			Pattern.CASE_INSENSITIVE);
 	
-	private static final List<Object> emptyContext = Arrays.asList(null, null, null);
+	private static int lastId = 0;
 	
-	public static final void generateFlows(final List<List<Object>> ops, final List<List<Object>> flows) {
-		final var context = new ArrayList<>(emptyContext);
+	private static final int newId() {
+		return ++lastId;
+	}
+	
+	public static final void generateFlows(final List<Op> ops, final List<Flow> flows) {
+		final var context = new Op[1];
 		final var srcs = new LinkedHashSet<>();
 		final var dsts = new LinkedHashSet<>();
+		final var dataParents = new HashMap<>();
+		final var dataDefinitionStack = new Stack<Object[]>();
 		
-		ops.forEach(row -> {
-			final var lineId = row.get(0);
-			final var proc = row.get(1);
-			final var verb = row.get(2);
-			final var obj = row.get(3);
-			final var op = row.get(4);
+		dataDefinitionStack.push(array("", 0));
+		
+		ops.forEach(op -> {
+			final var module = op.getModule();
 			
-			if (null == proc && null == verb && op.toString().startsWith("!")) {
-				dprintlnf("DataItem: %s %s", obj, op);
+			if (null == context[0]) {
+				context[0] = new Op(module, null, null, null, null, null);
 			}
 			
-			if (!lineId.equals(context.get(0)) && "".equals(obj)) {
-				updateFlows(context, srcs, dsts, flows);
+			final var lineId = op.getLineId();
+			final var proc = op.getProc();
+			final var verb = op.getVerb();
+			final var obj = op.getObj();
+			final var usage = op.getUsage();
+			
+			if (null == proc && "#data".equals(verb) && usage.matches("\\d+")) {
+				dprintlnf("DataItem: %s %s", obj, usage);
+				
+				final var dataName = obj;
+				final var dataLevel = Integer.parseInt(usage);
+				
+				if ((int) dataDefinitionStack.peek()[1] < dataLevel) {
+					dataParents.put(dataName, dataDefinitionStack.peek()[0]);
+					dataDefinitionStack.push(array(dataName, dataLevel));
+				} else {
+					while (dataLevel <= (int) dataDefinitionStack.peek()[1]) {
+						dataDefinitionStack.pop();
+					}
+				}
+			}
+			
+			if (!lineId.equals(context[0].getLineId()) && "".equals(obj)) {
+				updateFlows(dataParents, context[0], srcs, dsts, flows);
 				
 				dsts.clear();
 				srcs.clear();
-				context.clear();
-				context.addAll(row.subList(0, 3));
+				context[0] = op;
 			}
 			
-			if (U_READ.equals(op)) {
+			if (U_READ.equals(usage)) {
 				srcs.add(obj);
-			} else if (U_MODIFY.equals(op)) {
+			} else if (U_MODIFY.equals(usage)) {
 				dsts.add(obj);
 			}
 		});
 		
-		updateFlows(context, srcs, dsts, flows);
+		updateFlows(dataParents, context[0], srcs, dsts, flows);
 	}
 	
-	private static final void updateFlows(final List<Object> context, final Iterable<Object> srcs,
-			final Iterable<Object> dsts, final List<List<Object>> flows) {
-		final var verb = context.get(2);
+	private static final void updateFlows(final Map<Object, Object> dataParents, final Op context, final Collection<Object> srcs,
+			final Collection<Object> dsts, final List<Flow> flows) {
+		final var verb = context.getVerb();
 		final var verbIsValid = null != verb && !"".equals(verb);
 		
 		if (verbIsValid) {
+			if (srcs.isEmpty()) {
+				if (CblConstants.VB_ACCEPT.equalsIgnoreCase(verb)) {
+					srcs.add("?" + newId());
+				} else if (CblConstants.VB_SET.equalsIgnoreCase(verb) && 1 == dsts.size()) {
+					srcs.addAll(dsts);
+					dsts.clear();
+					dsts.add(dataParents.get(srcs.iterator().next()));
+				}
+			}
+			
 			srcs.forEach(src -> {
 				dsts.forEach(dst -> {
-					final var move = new ArrayList<>(context.subList(1, 3));
-					move.add(src);
-					move.add(dst);
-					flows.add(move);
+					flows.add(new Flow(context.getModule(), context.getProc(), context.getVerb(), src.toString(), dst.toString()));
 				});
 			});
 		}
@@ -409,6 +458,111 @@ public final class CblXrefParser {
 		
 		public final String group(final String name) {
 			return this.matcher.group(name);
+		}
+		
+	}
+	
+	/**
+	 * @author 2oLDNncs 20250324
+	 */
+	public static final class Op {
+		
+		private final String module;
+		private final Integer lineId;
+		private String proc;
+		private String verb;
+		private String obj;
+		private String usage;
+		
+		public Op(final String module, final Integer lineId,
+				final String proc, final String verb, final String obj, final String usage) {
+			this.module = module;
+			this.lineId = lineId;
+			this.proc = proc;
+			this.verb = verb;
+			this.obj = obj;
+			this.usage = usage;
+		}
+		
+		public final String getModule() {
+			return this.module;
+		}
+		
+		public final String getProc() {
+			return this.proc;
+		}
+		
+		public final void setProc(final String proc) {
+			this.proc = proc;
+		}
+		
+		public final String getVerb() {
+			return this.verb;
+		}
+		
+		public final void setVerb(final String verb) {
+			this.verb = verb;
+		}
+		
+		public final String getObj() {
+			return this.obj;
+		}
+		
+		public final void setObj(final String obj) {
+			this.obj = obj;
+		}
+		
+		public final String getUsage() {
+			return this.usage;
+		}
+		
+		public final void setUsage(final String usage) {
+			this.usage = usage;
+		}
+		
+		public final Integer getLineId() {
+			return this.lineId;
+		}
+		
+	}
+	
+	/**
+	 * @author 2oLDNncs 20250324
+	 */
+	public static final class Flow {
+		
+		private final String module;
+		private final String proc;
+		private final String verb;
+		private final String src;
+		private final String dst;
+		
+		public Flow(final String module, final String proc, final String verb, final String src, final String dst) {
+			this.module = module;
+			this.proc = proc;
+			this.verb = verb;
+			this.src = src;
+			this.dst = dst;
+		}
+		
+		public final String getModule() {
+			return this.module;
+		}
+		
+		public final String getProc() {
+			return this.proc;
+		}
+		
+		public final String getVerb() {
+			return this.verb;
+		}
+		
+		public final String getSrc() {
+			return this.src;
+		}
+		
+		public final String getDst() {
+			return this.dst;
 		}
 		
 	}
