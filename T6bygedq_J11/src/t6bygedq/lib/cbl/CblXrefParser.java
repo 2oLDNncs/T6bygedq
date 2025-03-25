@@ -10,6 +10,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Stack;
 import java.util.function.UnaryOperator;
@@ -325,13 +326,17 @@ public final class CblXrefParser {
 		
 		if (verbIsValid) {
 			if (srcs.isEmpty()) {
-				if (CblConstants.VB_ACCEPT.equalsIgnoreCase(verb)) {
+				if (CblConstants.VB_SET.equalsIgnoreCase(verb)) {
+					if (1 == dsts.size()) {
+						srcs.addAll(dsts);
+						dsts.clear();
+						dsts.add(dataParents.get(srcs.iterator().next()));
+					}
+				} else {
 					srcs.add("?" + newId());
-				} else if (CblConstants.VB_SET.equalsIgnoreCase(verb) && 1 == dsts.size()) {
-					srcs.addAll(dsts);
-					dsts.clear();
-					dsts.add(dataParents.get(srcs.iterator().next()));
 				}
+			} else if (dsts.isEmpty()) {
+				dsts.add("?" + newId());
 			}
 			
 			srcs.forEach(src -> {
