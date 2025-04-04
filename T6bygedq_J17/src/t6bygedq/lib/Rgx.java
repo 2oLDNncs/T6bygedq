@@ -15,16 +15,20 @@ public final class Rgx {
 		return rep(0, 1, regex);
 	}
 	
-	public static final String rep0(final String regex) {
-		return repN(0, regex);
+	public static final String rep0X(final String regex) {
+		return repNX(0, regex);
 	}
 	
-	public static final String rep1(final String regex) {
-		return repN(1, regex);
+	public static final String rep1X(final String regex) {
+		return repNX(1, regex);
 	}
 	
-	public static final String repN(final int min, final String regex) {
+	public static final String repNX(final int min, final String regex) {
 		return rep(min, Integer.MAX_VALUE, regex);
+	}
+	
+	public static final String repNN(final int n, final String regex) {
+		return rep(n, n, regex);
 	}
 	
 	public static final String rep(final int min, final int max, final String regex) {

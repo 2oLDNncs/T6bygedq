@@ -208,35 +208,35 @@ public final class CblXrefParser {
 	public static final String G_MAP_NAME = "Name";
 	
 	public static final Pattern P_END_OF_PAGE = Pattern.compile(Rgx.line(Rgx.seq(
-			Rgx.rep1("."),
-			String.join(Rgx.rep1("."), " Date ", " Time ", " Page ", Rgx.rep1("\\d")),
-			Rgx.rep0("."))));
+			Rgx.rep1X("."),
+			String.join(Rgx.rep1X("."), " Date ", " Time ", " Page ", Rgx.rep1X("\\d")),
+			Rgx.rep0X("."))));
 	
 	public static final Pattern P_MAP_TRIGGER = Pattern.compile(Rgx.line(Rgx.seq(
-			Rgx.rep0(" "),
-			String.join(Rgx.rep1(" "), "LineID", "Data Name", "Locator", "Structure", "Definition", "Data Type", "Attributes"),
-			Rgx.rep0(" "))));
+			Rgx.rep0X(" "),
+			String.join(Rgx.rep1X(" "), "LineID", "Data Name", "Locator", "Structure", "Definition", "Data Type", "Attributes"),
+			Rgx.rep0X(" "))));
 	
 	public static Pattern P_MAP = Pattern.compile(Rgx.line(Rgx.seq(
-			Rgx.rep0(" "),
-			String.join(Rgx.rep1(" "),
-					Rgx.grp(G_MAP_LINE_ID, Rgx.rep1("\\d")),
-					Rgx.grp(G_MAP_LEVEL, Rgx.rep1("\\d")),
-					Rgx.grp(G_MAP_NAME, Rgx.rep0("[^ .]"))),
-			Rgx.rep0("."))));
+			Rgx.rep0X(" "),
+			String.join(Rgx.rep1X(" "),
+					Rgx.grp(G_MAP_LINE_ID, Rgx.rep1X("\\d")),
+					Rgx.grp(G_MAP_LEVEL, Rgx.rep1X("\\d")),
+					Rgx.grp(G_MAP_NAME, Rgx.rep0X("[^ .]"))),
+			Rgx.rep0X("."))));
 	
 	public static final Pattern P_REF_TRIGGER = Pattern.compile(Rgx.line(Rgx.seq(
-			Rgx.rep0(" "),
+			Rgx.rep0X(" "),
 			Rgx.or("Defined", "Count"),
-			Rgx.rep1(" "),
+			Rgx.rep1X(" "),
 			"Cross-reference of ",
 			Rgx.grp(G_PARSE_MODE, Rgx.or(PM_DATA_NAMES, PM_PROCEDURES, PM_PROGRAMS, PM_VERBS)),
-			Rgx.rep1(" "),
+			Rgx.rep1X(" "),
 			"References",
-			Rgx.rep0(" "))));
+			Rgx.rep0X(" "))));
 	private static final String R_REF = Rgx.grp(G_REF,Rgx.seq(
 			Rgx.grp(G_REF_USAGE, Rgx.rep01("[A-Z]")),
-			Rgx.grp(G_REF_LINE_ID, Rgx.rep1("\\d"))));
+			Rgx.grp(G_REF_LINE_ID, Rgx.rep1X("\\d"))));
 	public static final Pattern P_REF = Pattern.compile(R_REF, Pattern.CASE_INSENSITIVE);
 	public static final Pattern P_REFS = Pattern.compile(
 			Rgx.line(Rgx.seq( // 2 cases: Definition with LineId, Name and references; Continuation with references only
@@ -245,17 +245,17 @@ public final class CblXrefParser {
 									Rgx.rep(0, 9, " "),
 									Rgx.grp(G_DEF_LINE_ID, Rgx.or(
 											C_EXTERNAL,
-											Rgx.rep1("\\d"))),
-									Rgx.rep1(" "),
-									Rgx.grp(G_DEF_NAME, Rgx.rep1("[^ .]")),
-									Rgx.rep1("[ .]")),
+											Rgx.rep1X("\\d"))),
+									Rgx.rep1X(" "),
+									Rgx.grp(G_DEF_NAME, Rgx.rep1X("[^ .]")),
+									Rgx.rep1X("[ .]")),
 							Rgx.rep(40, 43, " ")), // No definition: continuation of previous line
-					Rgx.grp(G_REFS, Rgx.rep0(Rgx.seq(
+					Rgx.grp(G_REFS, Rgx.rep0X(Rgx.seq(
 							" ",
 							R_REF))))), // References
 			Pattern.CASE_INSENSITIVE);
 	public static final Pattern P_PROCEDURE = Pattern.compile(
-			Rgx.start(Rgx.seq("  ", Rgx.rep(21, 21, "."), Rgx.repN(1, " "), CblConstants.KW_PROCEDURE)),
+			Rgx.start(Rgx.seq("  ", Rgx.rep(21, 21, "."), Rgx.repNX(1, " "), CblConstants.KW_PROCEDURE)),
 			Pattern.CASE_INSENSITIVE);
 	
 	private static int lastId = 0;

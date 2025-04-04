@@ -179,7 +179,7 @@ public final class Buffer {
 	
 	public static boolean DEBUG = false;
 	
-	public static final Charset EBCDIC = Charset.forName("Cp500");
+	public static final Charset EBCDIC = Charset.forName("Cp1047");
 	
 	public static final byte SPACE = EBCDIC.encode(" ").get();
 	
