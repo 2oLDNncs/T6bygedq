@@ -12,6 +12,7 @@ import java.util.Date;
 import java.util.List;
 import java.util.PriorityQueue;
 import java.util.Queue;
+import java.util.Random;
 import java.util.Stack;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
@@ -75,6 +76,7 @@ public final class GetTwsDta {
 	public static final void process(final String uriFmt, final Stream<String> uriArgsStream, final RowHandler rowHandler)
 			throws ParserConfigurationException, SAXException {
 		final var xmlParser = SAXParserFactory.newInstance().newSAXParser();
+		final var rand = new Random();
 		
 		uriArgsStream
 		.map(line -> line.split(LOCAL_COL_SEP))
@@ -86,7 +88,9 @@ public final class GetTwsDta {
 				
 				rowHandler.setUriArgs(uriArgs);
 				xmlParser.parse(uriStr, rowHandler);
-			} catch (final IOException | SAXException e) {
+				
+				Thread.sleep(1_000L + rand.nextLong() % 1_000L);
+			} catch (final IOException | SAXException | InterruptedException e) {
 				e.printStackTrace();
 			}
 		});
