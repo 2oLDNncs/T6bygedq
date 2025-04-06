@@ -20,6 +20,14 @@ public final class Helpers {
 		return elements;
 	}
 	
+	public static final <E> E[] concat(final E[] array, @SuppressWarnings("unchecked") final E... elements) {
+		final var result = Arrays.copyOf(array, array.length + elements.length);
+		
+		System.arraycopy(elements, 0, result, array.length, elements.length);
+		
+		return result;
+	}
+	
 	@SuppressWarnings("unchecked")
 	public static final <T> T cast(final Object object) {
 		return (T) object;
