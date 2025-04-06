@@ -10,7 +10,7 @@ import t6bygedq.lib.cbl.JclJobParser;
 /**
  * @author 2oLDNncs 20250404
  */
-@Debug(true)
+@Debug(false)
 public final class ParseJcl {
 	
 	public static final String ARG_IN = "-In";

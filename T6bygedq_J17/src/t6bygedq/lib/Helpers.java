@@ -33,6 +33,14 @@ public final class Helpers {
 		return (T) object;
 	}
 	
+	public static final <T> T castOrNull(final Class<T> cls, final Object object) {
+		if (cls.isInstance(object)) {
+			return cast(object);
+		}
+		
+		return null;
+	}
+	
 	public static final <E> E last(final E[] elements) {
 		return elements[elements.length - 1];
 	}

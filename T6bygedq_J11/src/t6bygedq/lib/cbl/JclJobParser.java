@@ -65,12 +65,25 @@ public abstract class JclJobParser extends JclStmtParser {
 			step.getDds().forEach((k, v) -> {
 				v.forEach(stmt -> {
 					Helpers.dprintlnf(">>>  %s%s", k, stmt.getParms());
+					
+					if (!stmt.getParms().isEmpty()) {
+						final var dsnDfn = Helpers.castOrNull(ParmsToken_Dfn.class, stmt.getParms().get(0));
+						
+						if (null != dsnDfn && "DSN".equalsIgnoreCase(dsnDfn.getKey())) {
+							this.dsn(job.getStmt().getName(), step.getStmt().getName(), stmt.getName(), dsnDfn.getValue().toString());
+						}
+					}
+					
 					stmt.getInput().forEach(line -> {
 						Helpers.dprintlnf(">>>   %s", line);
 					});
 				});
 			});
 		});
+	}
+	
+	protected void dsn(final String jobName, final String stepName, final String ddName, final String dsn) {
+		System.out.println(Helpers.dformat("DSN:%s", String.join("\t", jobName, stepName, ddName, dsn)));
 	}
 	
 	private final void setCurrentJob(final Job currentJob) {

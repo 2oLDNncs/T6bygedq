@@ -41,6 +41,8 @@ public final class GetTwsDta {
 	
 	public static final String ARG_URI_FMT = "-UriFmt";
 	public static final String ARG_URI_ARGS = "-UriArgs";
+	public static final String ARG_DELAY_MIN = "-DelayMin";
+	public static final String ARG_DELAY_MAX = "-DelayMax";
 	public static final String ARG_WORKBOOK = "-Workbook";
 	public static final String ARG_SHEET = "-Sheet";
 	
@@ -48,14 +50,22 @@ public final class GetTwsDta {
 	public static final String REMOTE_COL_SEP = ";";
 	public static final String REMOTE_ROW_SEP = Pattern.quote("||");
 	
+	static long delayMin = 0_500L;
+	static long delayMax = 1_500L;
+	
 	public static final void main(final String... args)
 			throws IOException, ParserConfigurationException, SAXException, InvalidFormatException {
 		final var ap = new ArgsParser(args);
 		
 		ap.setDefault(ARG_URI_FMT, "data/twsdta_%s_%s.xml");
 		ap.setDefault(ARG_URI_ARGS, "data/twsurlargs.txt");
+		ap.setDefault(ARG_DELAY_MIN, delayMin);
+		ap.setDefault(ARG_DELAY_MAX, delayMax);
 		ap.setDefault(ARG_WORKBOOK, "data/twsdta.xlsx");
 		ap.setDefault(ARG_SHEET, "Data");
+		
+		delayMin = ap.getLong(ARG_DELAY_MIN);
+		delayMax = ap.getLong(ARG_DELAY_MAX);
 		
 		process(
 				ap.getString(ARG_URI_FMT),
@@ -89,7 +99,7 @@ public final class GetTwsDta {
 				rowHandler.setUriArgs(uriArgs);
 				xmlParser.parse(uriStr, rowHandler);
 				
-				Thread.sleep(rand.nextLong(1_000L, 2_000L));
+				Thread.sleep(rand.nextLong(delayMin, delayMax));
 			} catch (final IOException | SAXException | InterruptedException e) {
 				e.printStackTrace();
 			}
