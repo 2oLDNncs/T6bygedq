@@ -2,6 +2,7 @@ package t6bygedq.app;
 
 import java.io.IOException;
 import java.net.URISyntaxException;
+import java.nio.charset.StandardCharsets;
 
 import t6bygedq.lib.ArgsParser;
 import t6bygedq.lib.Helpers.Debug;
@@ -20,7 +21,7 @@ public final class ParseJcl {
 		
 		ap.setDefault(ARG_IN, "data/JCL/pds.jcl");
 		
-		JclJobParser.parse(ap.getPath(ARG_IN), new JclJobParser() {});
+		JclJobParser.parse(ap.getPath(ARG_IN), StandardCharsets.ISO_8859_1, new JclJobParser() {});
 	}
 	
 }

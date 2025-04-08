@@ -22,6 +22,14 @@ public abstract class JclJobParser extends JclStmtParser {
 		this.setCurrentJob(null);
 	}
 	
+	private final List<Step> getCurrentSteps() {
+		if (null == this.inStreamProc) {
+			return this.currentJob.getSteps();
+		}
+		
+		return getOrCreate(this.currentJob.getProcs(), this.inStreamProc);
+	}
+	
 	@Override
 	protected void parseStmt(final Stmt stmt) {
 		super.parseStmt(stmt);
@@ -31,18 +39,10 @@ public abstract class JclJobParser extends JclStmtParser {
 			this.setCurrentJob(new Job(stmt));
 			break;
 		case K_EXEC:
-			if (null == this.inStreamProc) {
-				this.currentJob.getSteps().add(new Step(stmt));
-			} else {
-				this.currentJob.getProcs().computeIfAbsent(this.inStreamProc, __ -> new ArrayList<>()).add(new Step(stmt));
-			}
+			this.getCurrentSteps().add(new Step(stmt));
 			break;
 		case K_DD:
-			if (null == this.inStreamProc) {
-				Helpers.last(this.currentJob.getSteps()).getDds().computeIfAbsent(stmt.getName(), __ -> new ArrayList<>()).add(stmt);
-			} else {
-				Helpers.last(this.currentJob.getProcs().get(this.inStreamProc)).getDds().computeIfAbsent(stmt.getName(), __ -> new ArrayList<>()).add(stmt);
-			}
+			getOrCreate(Helpers.last(this.getCurrentSteps()).getDds(), stmt.getName()).add(stmt);
 			break;
 		case K_PROC:
 			this.inStreamProc = stmt.getName();
@@ -51,7 +51,7 @@ public abstract class JclJobParser extends JclStmtParser {
 			this.inStreamProc = null;
 			break;
 		default:
-			System.err.println(Helpers.dformat("Unexpected stmt type <%s>", stmt.getType()));
+			System.err.println(Helpers.dformat(stmt.errorMessage("Unhandled stmt type <%s>", stmt.getType())));
 			break;
 		}
 	}
@@ -70,7 +70,11 @@ public abstract class JclJobParser extends JclStmtParser {
 						final var dsnDfn = Helpers.castOrNull(ParmsToken_Dfn.class, stmt.getParms().get(0));
 						
 						if (null != dsnDfn && "DSN".equalsIgnoreCase(dsnDfn.getKey())) {
-							this.dsn(job.getStmt().getName(), step.getStmt().getName(), stmt.getName(), dsnDfn.getValue().toString());
+							this.dsn(
+									job.getStmt().getName(),
+									step.getStmt().getName(),
+									stmt.getName(),
+									dsnDfn.getValue().toString());
 						}
 					}
 					
@@ -83,7 +87,7 @@ public abstract class JclJobParser extends JclStmtParser {
 	}
 	
 	protected void dsn(final String jobName, final String stepName, final String ddName, final String dsn) {
-		System.out.println(Helpers.dformat("DSN:%s", String.join("\t", jobName, stepName, ddName, dsn)));
+		System.out.println(Helpers.dformat("%s", String.join("\t", jobName, stepName, ddName, dsn)));
 	}
 	
 	private final void setCurrentJob(final Job currentJob) {
@@ -92,6 +96,10 @@ public abstract class JclJobParser extends JclStmtParser {
 		}
 		
 		this.currentJob = currentJob;
+	}
+	
+	public static final <K, V> List<V> getOrCreate(final Map<K, List<V>> map, final K key) {
+		return map.computeIfAbsent(key, __ -> new ArrayList<>());
 	}
 	
 	/**

@@ -3,6 +3,7 @@ package t6bygedq.lib.cbl;
 import java.io.IOException;
 import java.io.StreamTokenizer;
 import java.io.StringReader;
+import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Stack;
@@ -34,7 +35,7 @@ public abstract class JclStmtParser extends JclLineParser {
 				this.nextStmt(this.currentStmt.getName(), type);
 				break;
 			default:
-				System.err.println(Helpers.dformat("Unexpected stmt type <%s>", type));
+				System.err.println(Helpers.dformat(this.errorMessage("Unexpected stmt type <%s>", type)));
 				break;
 			}
 		}
@@ -308,7 +309,7 @@ public abstract class JclStmtParser extends JclLineParser {
 	}
 	
 	private final void nextStmt(final String name, final String type) {
-		this.setCurrentStmt(new Stmt(name, type));
+		this.setCurrentStmt(new Stmt(name, type, this.cloneCurrentLocation()));
 	}
 	
 	private final void setCurrentStmt(final Stmt currentStmt) {
@@ -336,9 +337,12 @@ public abstract class JclStmtParser extends JclLineParser {
 		
 		private final List<String> input = new ArrayList<>();
 		
-		public Stmt(final String name, final String type) {
+		private final Location location;
+		
+		public Stmt(final String name, final String type, final Location location) {
 			this.name = name;
 			this.type = type;
+			this.location = location;
 		}
 		
 		public final String getName() {
@@ -347,6 +351,22 @@ public abstract class JclStmtParser extends JclLineParser {
 		
 		public final String getType() {
 			return this.type;
+		}
+		
+		public final URI getSource() {
+			return this.location.getSource();
+		}
+		
+		public final int getSourceLineNumber() {
+			return this.location.getLineNumber();
+		}
+		
+		public final String getSourceLine() {
+			return this.location.getLine();
+		}
+		
+		public final String errorMessage(final String prefixFormat, final Object... prefixArgs) {
+			return this.location.errorMessage(prefixFormat, prefixArgs);
 		}
 		
 		public final List<Object> getParms() {
