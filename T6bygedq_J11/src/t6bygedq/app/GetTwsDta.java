@@ -215,10 +215,8 @@ public final class GetTwsDta {
 		protected void row(final String[] rowData) {
 			super.row(rowData);
 			
-			this.wu.row(Helpers.concat(Helpers.concat(
-					this.getUriArgs(),
-					this.wu.getTimestamp(),
-					Helpers.last(this.getPath())),
+			this.wu.row(Helpers.concat(
+					Helpers.array(Helpers.last(this.getPath())),
 					rowData));
 		}
 		

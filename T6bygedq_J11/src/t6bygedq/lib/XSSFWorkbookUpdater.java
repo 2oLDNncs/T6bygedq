@@ -89,7 +89,7 @@ public final class XSSFWorkbookUpdater implements Closeable {
 	}
 	
 	private final void packRows() {
-		for (var i = 0; i < this.sheet.getLastRowNum(); i += 1) {
+		for (var i = 0; i <= this.sheet.getLastRowNum(); i += 1) {
 			final var row = this.sheet.getRow(i);
 			
 			if (null == row) {
@@ -118,8 +118,10 @@ public final class XSSFWorkbookUpdater implements Closeable {
 		this.setupRange();
 		
 		final var row = this.sheet.createRow(this.getAvailableRowNum());
-		
-		addCells(row, 0, rowData);
+		var colNum = 0;
+		colNum = addCells(row, colNum, this.getUpdateKey());
+		colNum = addCells(row, colNum, this.getTimestamp());
+		colNum = addCells(row, colNum, rowData);
 	}
 	
 	public static final boolean startsWith(final Row row, final String[] values) {
