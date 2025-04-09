@@ -114,7 +114,7 @@ public final class XSSFWorkbookUpdater implements Closeable {
 		return this.availableRowNums.poll();
 	}
 	
-	public final void row(final String[] rowData) {
+	public final void row(final String... rowData) {
 		this.setupRange();
 		
 		final var row = this.sheet.createRow(this.getAvailableRowNum());
