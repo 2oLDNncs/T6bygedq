@@ -37,9 +37,9 @@ public final class GetTwsDta {
 	public static final String ARG_WORKBOOK = "-Workbook";
 	public static final String ARG_SHEET = "-Sheet";
 	
-	public static final String LOCAL_COL_SEP = "\t";
-	public static final String REMOTE_COL_SEP = ";";
-	public static final String REMOTE_ROW_SEP = Pattern.quote("||");
+	public static final String LOCAL_COL_DELIMITER = "\t";
+	public static final String REMOTE_COL_DELIMITER = ";";
+	public static final String REMOTE_ROW_DELIMITER = Pattern.quote("||");
 	
 	static long delayMin = 0_500L;
 	static long delayMax = 1_500L;
@@ -66,15 +66,6 @@ public final class GetTwsDta {
 				WorkbookUpdater::newDefaultInstance);
 	}
 	
-	/**
-	 * @author 2oLDNncs 20250408
-	 */
-	public static abstract interface WuAction {
-		
-		public abstract void process(XSSFWorkbookUpdater wu);
-		
-	}
-	
 	private static final void updateWorkbook(final File workbookFile, final String sheetName,
 			final WorkbookUpdater.Factory wuFactory, final Consumer<WorkbookUpdater> wuAction)
 					throws InvalidFormatException, IOException {
@@ -85,7 +76,7 @@ public final class GetTwsDta {
 	
 	public static final void process(final String uriFmt, final Stream<String> uriArgsStream,
 			final File workbookFile, final String sheetName, final WorkbookUpdater.Factory wuFactory)
-					throws InvalidFormatException, IOException, ParserConfigurationException, SAXException {
+					throws InvalidFormatException, IOException {
 		updateWorkbook(workbookFile, sheetName, wuFactory, wu -> {
 			try {
 				process(uriFmt, uriArgsStream, wu);
@@ -95,7 +86,7 @@ public final class GetTwsDta {
 		});
 	}
 	
-	public static final void process(final String uriFmt, final Stream<String> uriArgsStream, final RowHandler rowHandler)
+	public static final void process(final String uriFmt, final Stream<String> uriArgsStream, final DsvUnwrapper rowHandler)
 			throws ParserConfigurationException, SAXException {
 		final var xmlParser = SAXParserFactory.newInstance().newSAXParser();
 		final var rand = ThreadLocalRandom.current();
@@ -117,7 +108,7 @@ public final class GetTwsDta {
 	public static final void process(final String uriFmt, final Stream<String> uriArgsStream,
 			final BiConsumer<String, String[]> uriArgsAction) {
 		uriArgsStream
-		.map(line -> line.split(LOCAL_COL_SEP))
+		.map(line -> line.split(LOCAL_COL_DELIMITER))
 		.forEach(uriArgs -> {
 			final var uriStr = String.format(uriFmt, (Object[]) uriArgs);
 			
@@ -130,11 +121,27 @@ public final class GetTwsDta {
 	/**
 	 * @author 2oLDNncs 20250405
 	 */
-	public static abstract class RowHandler extends DefaultHandler {
+	public static abstract class DsvUnwrapper extends DefaultHandler {
+		
+		private final String colDelimiter;
+		private final String rowDelimiter;
 		
 		private String[] uriArgs;
 		private final Stack<String> path = new Stack<>();
 		private final StringBuilder buffer = new StringBuilder();
+		
+		protected DsvUnwrapper(final String colDelimiter, final String rowDelimiter) {
+			this.colDelimiter = colDelimiter;
+			this.rowDelimiter = rowDelimiter;
+		}
+		
+		public final String getColDelimiter() {
+			return this.colDelimiter;
+		}
+		
+		public final String getRowDelimiter() {
+			return this.rowDelimiter;
+		}
 		
 		protected final List<String> getPath() {
 			return this.path;
@@ -144,7 +151,7 @@ public final class GetTwsDta {
 			return this.uriArgs;
 		}
 		
-		public final void setUriArgs(final String[] uriArgs) {
+		public final void setUriArgs(final String... uriArgs) {
 			this.uriArgs = uriArgs;
 			this.onSetUriArgs();
 		}
@@ -154,24 +161,28 @@ public final class GetTwsDta {
 		}
 		
 		private final void flush() {
-			final var data = this.buffer.toString();
+			final var bufferData = this.buffer.toString();
 			
-			if (data.contains(REMOTE_COL_SEP)) {
-				final var rows = data.split(REMOTE_ROW_SEP);
-				
-				for (final var row : rows) {
-					this.row(row.split(REMOTE_COL_SEP));
-				}
+			if (bufferData.contains(this.getColDelimiter())) {
+				this.processDsvData(bufferData);
 			}
 			
 			this.buffer.setLength(0);
 		}
 		
+		private final void processDsvData(final String dsvData) {
+			final var rows = dsvData.split(this.getRowDelimiter());
+			
+			for (final var row : rows) {
+				this.row(row.split(this.getColDelimiter()));
+			}
+		}
+		
 		protected void row(final String[] rowData) {
 			System.out.println(Helpers.dformat("%s %s	%s",
 					this.getPath(),
-					String.join(LOCAL_COL_SEP, this.getUriArgs()),
-					String.join(LOCAL_COL_SEP, rowData)));
+					String.join(LOCAL_COL_DELIMITER, this.getUriArgs()),
+					String.join(LOCAL_COL_DELIMITER, rowData)));
 		}
 		
 		@Override
@@ -198,11 +209,12 @@ public final class GetTwsDta {
 	/**
 	 * @author 2oLDNncs 20250408
 	 */
-	public static abstract class WorkbookUpdater extends RowHandler implements Closeable {
+	public static abstract class WorkbookUpdater extends DsvUnwrapper implements Closeable {
 		
 		private final XSSFWorkbookUpdater wu;
 		
-		public WorkbookUpdater(final File workbookFile, final String sheetName) throws InvalidFormatException, IOException {
+		protected WorkbookUpdater(final File workbookFile, final String sheetName) throws InvalidFormatException, IOException {
+			super(REMOTE_COL_DELIMITER, REMOTE_ROW_DELIMITER);
 			this.wu = new XSSFWorkbookUpdater(workbookFile, sheetName);
 		}
 		

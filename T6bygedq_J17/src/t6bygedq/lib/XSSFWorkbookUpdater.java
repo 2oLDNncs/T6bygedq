@@ -56,7 +56,7 @@ public final class XSSFWorkbookUpdater implements Closeable {
 		return this.updateKey;
 	}
 	
-	public final void setUpdateKey(final String[] updateKey) {
+	public final void setUpdateKey(final String... updateKey) {
 		this.updateKey = updateKey;
 	}
 	
