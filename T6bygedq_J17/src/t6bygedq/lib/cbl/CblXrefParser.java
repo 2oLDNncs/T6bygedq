@@ -299,7 +299,8 @@ public final class CblXrefParser {
 						dataDefinitionStack.push(array(dataName, dataLevel));
 					}
 				} else {
-					while (dataLevel <= (int) dataDefinitionStack.peek()[1]) {
+					while (!dataDefinitionStack.isEmpty()
+							&& dataLevel <= (int) dataDefinitionStack.peek()[1]) {
 						dataDefinitionStack.pop();
 					}
 					
