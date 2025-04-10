@@ -9,10 +9,12 @@ import java.util.List;
 import java.util.Stack;
 
 import t6bygedq.lib.Helpers;
+import t6bygedq.lib.Helpers.Debug;
 
 /**
  * @author 2oLDNncs 20250406
  */
+@Debug(false)
 public abstract class JclStmtParser extends JclLineParser {
 	
 	private Stmt currentStmt = null;
@@ -40,131 +42,128 @@ public abstract class JclStmtParser extends JclLineParser {
 			}
 		}
 		
-		if (false) {
-			final var st = new StreamTokenizer(new StringReader(parms));
+		if (true) {
+			final var st = newTokenizer(parms);
 			
-			st.resetSyntax();
-			
-			for (char i = 0; i < 256; i += 1) {
-				switch (i) {
-				case '(':
-				case ')':
-				case '"':
-				case '\'':
-				case ',':
-				case ' ':
-				case '=':
-					break;
-				default:
-					st.wordChars(i, i);
-					break;
-				}
-			}
-			
-//	        st.whitespaceChars(',', ',');
-	        st.quoteChar('"');
-	        st.quoteChar('\'');
-			st.slashSlashComments(false);
-			st.slashStarComments(false);
-			st.commentChar(' ');
-			st.eolIsSignificant(false);
-			st.lowerCaseMode(false);
-			
-			final var tokens = new ArrayList<>();
+			final var tokens = new ArrayList<ParmsToken>();
 			
 			try {
-				while (StreamTokenizer.TT_EOF != st.nextToken()) {
-					switch (st.ttype) {
-					case StreamTokenizer.TT_WORD:
-						tokens.add(new ParmsToken_Id(st.sval));
-						break;
-					case '\'':
-					case '\"':
-						tokens.add(new ParmsToken_String(st.sval));
-						break;
-					case StreamTokenizer.TT_NUMBER:
-						throw new IllegalStateException();
-					default:
-						tokens.add((char) st.ttype);
-						break;
-					}
-				}
+				generateTokens(st, tokens);
 				
-				System.out.println(Helpers.dformat("<%s", tokens));
+				Helpers.dprintlnf("<%s", tokens);
 				
-				{
-					final var grouping = new Stack<Integer>();
-					
-					for (var i = 0; i < tokens.size(); i += 1) {
-						final var c = Helpers.castOrNull(Character.class, tokens.get(i));
-						
-						if (null != c) {
-							if ('(' == c) {
-								grouping.push(i);
-							} else if (')' == c) {
-								final var j = grouping.pop();
-								final var group = new ArrayList<>(tokens.subList(j + 1, i));
-								reduce1(group);
-								final var subList = tokens.subList(j, i + 1);
-								subList.clear();
-								if (group.stream().allMatch(ParmsToken.class::isInstance)) {
-									final var grp = new ParmsToken_Group();
-									group.stream().map(ParmsToken.class::cast).forEach(grp.getTokens()::add);
-									subList.add(grp);
-								} else {
-									subList.add(group);
-								}
-								i = j;
-							}
-						}
-					}
-					
-//					System.out.println(Helpers.dformat(">%s", tokens));
-				}
+				parseGrps(tokens);
 				
-				reduce1(tokens);
-				
-				System.out.println(Helpers.dformat(">%s", tokens));
+				Helpers.dprintlnf(">%s", tokens);
 			} catch (final IOException e) {
 				e.printStackTrace();
 			}
+		} else {
+//			this.currentStmt.getParms().addAll(Arrays.asList(parms.split(",")));
+			this.currentStmt.getParms().addAll(ParmsToken.parse(parms));
 		}
-		
-//		System.out.println(Helpers.dformat("%s", parms));
-//		System.out.println(Helpers.dformat(" %s", ParmsToken.parse(parms)));
-		
-//		this.currentStmt.getParms().addAll(Arrays.asList(parms.split(",")));
-		this.currentStmt.getParms().addAll(ParmsToken.parse(parms));
 	}
 	
-	private static final void reduce2(final List<Object> tokens) {
-//		System.out.println(Helpers.dformat("<%s", tokens));
+	private static final void generateTokens(final StreamTokenizer st, final ArrayList<ParmsToken> tokens) throws IOException {
+		while (StreamTokenizer.TT_EOF != st.nextToken()) {
+			switch (st.ttype) {
+			case StreamTokenizer.TT_WORD:
+				tokens.add(new ParmsToken_Id(st.sval));
+				break;
+			case '\'':
+			case '\"':
+				tokens.add(new ParmsToken_String(st.sval));
+				break;
+			case StreamTokenizer.TT_NUMBER:
+				throw new IllegalStateException();
+			default:
+				switch (st.ttype) {
+				case ' ':
+					tokens.add(ParmsToken_Id.T_SPAC);
+					break;
+				case ',':
+					tokens.add(ParmsToken_Id.T_DELI);
+					break;
+				case '(':
+					tokens.add(ParmsToken_Id.T_LPAR);
+					break;
+				case ')':
+					tokens.add(ParmsToken_Id.T_RPAR);
+					break;
+				case '=':
+					tokens.add(ParmsToken_Id.T_EQUA);
+					break;
+				default:
+					throw new IllegalStateException(String.format("Syntax error: %s", (char) st.ttype));
+				}
+			}
+		}
+	}
+	
+	private static final StreamTokenizer newTokenizer(final String parms) {
+		final var result = new StreamTokenizer(new StringReader(parms));
 		
-		for (var i = 0; i < tokens.size(); i += 1) {
-			final var c = Helpers.castOrNull(Character.class, tokens.get(i));
-			
-			if (null != c && '=' == c) {
-				final var dfn = new ParmsToken_Dfn(tokens.get(i - 1).toString(), (ParmsToken) tokens.get(i + 1));
-				final var subList = tokens.subList(i - 1, i + 2);
-				subList.clear();
-				subList.add(dfn);
-				i -= 1;
+		result.resetSyntax();
+		
+		for (char i = 0; i < 256; i += 1) {
+			switch (i) {
+			case '(':
+			case ')':
+			case '"':
+			case '\'':
+			case ',':
+			case ' ':
+			case '=':
+				break;
+			default:
+				result.wordChars(i, i);
+				break;
 			}
 		}
 		
-//		System.out.println(Helpers.dformat(">%s", tokens));
+		result.quoteChar('"');
+		result.quoteChar('\'');
+		result.slashSlashComments(false);
+		result.slashStarComments(false);
+		result.commentChar(' ');
+		result.eolIsSignificant(false);
+		result.lowerCaseMode(false);
+		
+		return result;
 	}
 	
-	private static final void reduce1(final List<Object> tokens) {
-//		System.out.println(Helpers.dformat("<%s", tokens));
+	private static final void parseGrps(final ArrayList<ParmsToken> tokens) {
+		final var grouping = new Stack<Integer>();
 		
-		for (int i = 0, j = 0; j < tokens.size(); j += 1) {
-			final var c = Helpers.castOrNull(Character.class, tokens.get(j));
+		for (var i = 0; i < tokens.size(); i += 1) {
+			final var token = tokens.get(i);
 			
-			if (null != c && ',' == c) {
+			if (ParmsToken_Id.T_LPAR == token) {
+				grouping.push(i);
+			} else if (ParmsToken_Id.T_RPAR == token) {
+				final var j = grouping.pop();
+				final var group = new ArrayList<>(tokens.subList(j + 1, i));
+				parseElts(group);
+				final var subList = tokens.subList(j, i + 1);
+				subList.clear();
+				final var grp = new ParmsToken_Group();
+				group.forEach(grp.getTokens()::add);
+				subList.add(grp);
+				i = j;
+			}
+		}
+		
+		parseElts(tokens);
+	}
+	
+	private static final void parseElts(final List<ParmsToken> tokens) {
+		for (int i = 0, j = 0; j < tokens.size(); j += 1) {
+			final var token = tokens.get(j);
+			
+			if (ParmsToken_Id.T_DELI  == token) {
 				final var group = new ArrayList<>(tokens.subList(i, j));
 				
-				reduce2(group);
+				parseDfns(group);
 				
 				final var subList = tokens.subList(i, j + 1);
 				subList.clear();
@@ -172,30 +171,41 @@ public abstract class JclStmtParser extends JclLineParser {
 				if (1 == group.size()) {
 					subList.add(group.get(0));
 				} else {
-					if (group.stream().allMatch(ParmsToken.class::isInstance)) {
-						final var grp = new ParmsToken_Group();
-						
-						group.stream().map(ParmsToken.class::cast).forEach(grp.getTokens()::add);
-						subList.add(grp);
-					} else {
-						subList.add(group);
-					}
+					final var grp = new ParmsToken_Group();
+					
+					group.stream()
+					.map(ParmsToken.class::cast)
+					.forEach(grp.getTokens()::add);
+					
+					subList.add(grp);
 				}
 				j = i;
 				i += 1;
 			}
 		}
 		
-		reduce2(tokens);
-		
-//		System.out.println(Helpers.dformat(">%s", tokens));
+		parseDfns(tokens);
+	}
+	
+	private static final void parseDfns(final List<ParmsToken> tokens) {
+		for (var i = 0; i < tokens.size(); i += 1) {
+			final var token = tokens.get(i);
+			
+			if (ParmsToken_Id.T_EQUA == token) {
+				final var dfn = new ParmsToken_Dfn(tokens.get(i - 1).toString(), tokens.get(i + 1));
+				final var subList = tokens.subList(i - 1, i + 2);
+				subList.clear();
+				subList.add(dfn);
+				i -= 1;
+			}
+		}
 	}
 	
 	/**
 	 * @author 2oLDNncs 20250406
 	 */
 	public static abstract class ParmsToken {
-		
+					
 		private static enum ParseMode {
 			NORMAL, STRING, GROUP_END;
 		}
@@ -386,6 +396,12 @@ public abstract class JclStmtParser extends JclLineParser {
 		public final String toString() {
 			return "¤" + this.getValue();
 		}
+		
+		public static final ParmsToken_Id T_SPAC = new ParmsToken_Id(" ");
+		public static final ParmsToken_Id T_DELI = new ParmsToken_Id(",");
+		public static final ParmsToken_Id T_LPAR = new ParmsToken_Id("(");
+		public static final ParmsToken_Id T_RPAR = new ParmsToken_Id(")");
+		public static final ParmsToken_Id T_EQUA = new ParmsToken_Id("=");
 		
 	}
 	
