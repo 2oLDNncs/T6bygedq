@@ -6,10 +6,12 @@ import java.util.List;
 import java.util.Map;
 
 import t6bygedq.lib.Helpers;
+import t6bygedq.lib.Helpers.Debug;
 
 /**
  * @author 2oLDNncs 20250406
  */
+@Debug(false)
 public abstract class JclJobParser extends JclStmtParser {
 	
 	private Job currentJob = null;
@@ -59,31 +61,69 @@ public abstract class JclJobParser extends JclStmtParser {
 	protected void parseJob(final Job job) {
 		Helpers.dprintlnf(">>>%s", this.currentJob.getStmt());
 		
+		this.beginJob(job);
+		
 		this.currentJob.getSteps().forEach(step -> {
 			Helpers.dprintlnf(">>> %s", step.getStmt());
 			
+			this.beginStep(job, step);
+			
 			step.getDds().forEach((k, v) -> {
+				this.beginDdGroup(job, step, k);
+				
 				v.forEach(stmt -> {
 					Helpers.dprintlnf(">>>  %s%s", k, stmt.getParms());
 					
-					if (!stmt.getParms().isEmpty()) {
-						final var dsnDfn = Helpers.castOrNull(ParmsToken_Dfn.class, stmt.getParms().get(0));
-						
-						if (null != dsnDfn && "DSN".equalsIgnoreCase(dsnDfn.getKey())) {
-							this.dsn(
-									job.getStmt().getName(),
-									step.getStmt().getName(),
-									stmt.getName(),
-									dsnDfn.getValue().toString());
-						}
-					}
-					
-					stmt.getInput().forEach(line -> {
-						Helpers.dprintlnf(">>>   %s", line);
-					});
+					this.dd(job, step, k, stmt);
 				});
+				
+				this.endDdGroup(job, step, k);
 			});
+			
+			this.endStep(job, step);
 		});
+		
+		this.endJob(job);
+	}
+	
+	protected void beginJob(final Job job) {
+		//pass
+	}
+	
+	protected void beginStep(final Job job, final Step step) {
+		//pass
+	}
+	
+	protected void beginDdGroup(final Job job, final Step step, final String ddName) {
+		//pass
+	}
+	
+	protected void dd(final Job job, final Step step, final String ddName, final Stmt ddStmt) {
+		final var dsn = ddStmt.findParmVal("DSN");
+		
+		if (null != dsn) {
+			this.dsn(
+					job.getStmt().getName(),
+					step.getStmt().getName(),
+					ddStmt.getName(),
+					((Parm_Id) dsn).getVal());
+		}
+		
+		ddStmt.getInput().forEach(line -> {
+			Helpers.dprintlnf(">>>   %s", line);
+		});
+	}
+	
+	protected void endDdGroup(final Job job, final Step step, final String ddName) {
+		//pass
+	}
+	
+	protected void endStep(final Job job, final Step step) {
+		//pass
+	}
+	
+	protected void endJob(final Job job) {
+		//pass
 	}
 	
 	protected void dsn(final String jobName, final String stepName, final String ddName, final String dsn) {

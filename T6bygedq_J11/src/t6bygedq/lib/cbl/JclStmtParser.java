@@ -5,7 +5,9 @@ import java.io.StreamTokenizer;
 import java.io.StringReader;
 import java.net.URI;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
+import java.util.Objects;
 import java.util.Stack;
 
 import t6bygedq.lib.Helpers;
@@ -43,12 +45,10 @@ public abstract class JclStmtParser extends JclLineParser {
 		}
 		
 		if (true) {
-			final var st = newTokenizer(parms);
-			
-			final var tokens = new ArrayList<ParmsToken>();
+			final var tokens = new ArrayList<Parm>();
 			
 			try {
-				generateTokens(st, tokens);
+				generateTokens(newTokenizer(parms), tokens);
 				
 				Helpers.dprintlnf("<%s", tokens);
 				
@@ -58,40 +58,48 @@ public abstract class JclStmtParser extends JclLineParser {
 			} catch (final IOException e) {
 				e.printStackTrace();
 			}
+			
+			this.currentStmt.getParms().addAll(tokens);
 		} else {
 //			this.currentStmt.getParms().addAll(Arrays.asList(parms.split(",")));
-			this.currentStmt.getParms().addAll(ParmsToken.parse(parms));
+			this.currentStmt.getParms().addAll(Parm.parse(parms));
 		}
 	}
 	
-	private static final void generateTokens(final StreamTokenizer st, final ArrayList<ParmsToken> tokens) throws IOException {
+	private static final void generateTokens(final StreamTokenizer st, final List<Parm> tokens) throws IOException {
 		while (StreamTokenizer.TT_EOF != st.nextToken()) {
 			switch (st.ttype) {
 			case StreamTokenizer.TT_WORD:
-				tokens.add(new ParmsToken_Id(st.sval));
+				tokens.add(new Parm_Id(st.sval));
 				break;
 			case '\'':
-			case '\"':
-				tokens.add(new ParmsToken_String(st.sval));
+				final var previousToken = tokens.isEmpty() ? null : Helpers.castOrNull(Parm_Str.class, Helpers.last(tokens));
+				
+				if (null != previousToken) {
+					tokens.set(tokens.size() - 1, new Parm_Str(String.format("%s'%s",
+							previousToken.getVal(), st.sval)));
+				} else {
+					tokens.add(new Parm_Str(st.sval));
+				}
 				break;
 			case StreamTokenizer.TT_NUMBER:
 				throw new IllegalStateException();
 			default:
 				switch (st.ttype) {
 				case ' ':
-					tokens.add(ParmsToken_Id.T_SPAC);
+					tokens.add(Parm_Id.T_SPAC);
 					break;
 				case ',':
-					tokens.add(ParmsToken_Id.T_DELI);
+					tokens.add(Parm_Id.T_DELI);
 					break;
 				case '(':
-					tokens.add(ParmsToken_Id.T_LPAR);
+					tokens.add(Parm_Id.T_LPAR);
 					break;
 				case ')':
-					tokens.add(ParmsToken_Id.T_RPAR);
+					tokens.add(Parm_Id.T_RPAR);
 					break;
 				case '=':
-					tokens.add(ParmsToken_Id.T_EQUA);
+					tokens.add(Parm_Id.T_EQUA);
 					break;
 				default:
 					throw new IllegalStateException(String.format("Syntax error: %s", (char) st.ttype));
@@ -109,7 +117,6 @@ public abstract class JclStmtParser extends JclLineParser {
 			switch (i) {
 			case '(':
 			case ')':
-			case '"':
 			case '\'':
 			case ',':
 			case ' ':
@@ -121,7 +128,6 @@ public abstract class JclStmtParser extends JclLineParser {
 			}
 		}
 		
-		result.quoteChar('"');
 		result.quoteChar('\'');
 		result.slashSlashComments(false);
 		result.slashStarComments(false);
@@ -132,22 +138,22 @@ public abstract class JclStmtParser extends JclLineParser {
 		return result;
 	}
 	
-	private static final void parseGrps(final ArrayList<ParmsToken> tokens) {
+	private static final void parseGrps(final List<Parm> tokens) {
 		final var grouping = new Stack<Integer>();
 		
 		for (var i = 0; i < tokens.size(); i += 1) {
 			final var token = tokens.get(i);
 			
-			if (ParmsToken_Id.T_LPAR == token) {
+			if (Parm_Id.T_LPAR == token) {
 				grouping.push(i);
-			} else if (ParmsToken_Id.T_RPAR == token) {
+			} else if (Parm_Id.T_RPAR == token) {
 				final var j = grouping.pop();
 				final var group = new ArrayList<>(tokens.subList(j + 1, i));
 				parseElts(group);
 				final var subList = tokens.subList(j, i + 1);
 				subList.clear();
-				final var grp = new ParmsToken_Group();
-				group.forEach(grp.getTokens()::add);
+				final var grp = new Parm_Grp();
+				grp.getElts().addAll(group);
 				subList.add(grp);
 				i = j;
 			}
@@ -156,11 +162,11 @@ public abstract class JclStmtParser extends JclLineParser {
 		parseElts(tokens);
 	}
 	
-	private static final void parseElts(final List<ParmsToken> tokens) {
+	private static final void parseElts(final List<Parm> tokens) {
 		for (int i = 0, j = 0; j < tokens.size(); j += 1) {
 			final var token = tokens.get(j);
 			
-			if (ParmsToken_Id.T_DELI  == token) {
+			if (Parm_Id.T_DELI  == token) {
 				final var group = new ArrayList<>(tokens.subList(i, j));
 				
 				parseDfns(group);
@@ -171,11 +177,9 @@ public abstract class JclStmtParser extends JclLineParser {
 				if (1 == group.size()) {
 					subList.add(group.get(0));
 				} else {
-					final var grp = new ParmsToken_Group();
+					final var grp = new Parm_Grp();
 					
-					group.stream()
-					.map(ParmsToken.class::cast)
-					.forEach(grp.getTokens()::add);
+					grp.getElts().addAll(group);
 					
 					subList.add(grp);
 				}
@@ -187,12 +191,14 @@ public abstract class JclStmtParser extends JclLineParser {
 		parseDfns(tokens);
 	}
 	
-	private static final void parseDfns(final List<ParmsToken> tokens) {
-		for (var i = 0; i < tokens.size(); i += 1) {
+	private static final void parseDfns(final List<Parm> tokens) {
+		for (var i = tokens.size() - 1; 0 <= i; i -= 1) {
 			final var token = tokens.get(i);
 			
-			if (ParmsToken_Id.T_EQUA == token) {
-				final var dfn = new ParmsToken_Dfn(tokens.get(i - 1).toString(), tokens.get(i + 1));
+			if (Parm_Id.T_EQUA == token) {
+				final var keyToken = tokens.get(i - 1);
+				final var valToken = tokens.get(i + 1);
+				final var dfn = new Parm_Dfn(((Parm_Id) keyToken).getVal(), valToken);
 				final var subList = tokens.subList(i - 1, i + 2);
 				subList.clear();
 				subList.add(dfn);
@@ -204,14 +210,14 @@ public abstract class JclStmtParser extends JclLineParser {
 	/**
 	 * @author 2oLDNncs 20250406
 	 */
-	public static abstract class ParmsToken {
+	public static abstract class Parm {
 					
 		private static enum ParseMode {
 			NORMAL, STRING, GROUP_END;
 		}
 		
-		public static final List<ParmsToken> parse(final String parms) {
-			final var result = new ArrayList<ParmsToken>();
+		public static final List<Parm> parse(final String parms) {
+			final var result = new ArrayList<Parm>();
 			final var buffer = new StringBuilder();
 			final var grouping = new Stack<Integer>();
 			
@@ -220,7 +226,7 @@ public abstract class JclStmtParser extends JclLineParser {
 				
 				if (3 <= n && "=".equals(result.get(n - 2).toString()) &&
 						(grouping.isEmpty() || grouping.peek() <= n - 3)) {
-					final var dfn = new ParmsToken_Dfn(result.get(n - 3).toString(), result.get(n - 1));
+					final var dfn = new Parm_Dfn(result.get(n - 3).toString(), result.get(n - 1));
 					result.subList(n - 3, n).clear();
 					result.add(dfn);
 				}
@@ -243,7 +249,7 @@ public abstract class JclStmtParser extends JclLineParser {
 						i = n;
 						parseMode = ParseMode.NORMAL;
 					} else if ('\'' == c) {
-						buffer.append(((ParmsToken_String) result.remove(result.size() - 1)).getValue());
+						buffer.append(((Parm_Str) result.remove(result.size() - 1)).getVal());
 						buffer.append(c);
 						parseMode = ParseMode.STRING;
 					} else {
@@ -255,27 +261,27 @@ public abstract class JclStmtParser extends JclLineParser {
 					break;
 				case NORMAL:
 					if (',' == c) {
-						result.add(new ParmsToken_Id(buffer.toString()));
+						result.add(new Parm_Id(buffer.toString()));
 						buffer.setLength(0);
 						detectDfn.run();
 					} else if ('=' == c) {
-						result.add(new ParmsToken_Id(buffer.toString()));
+						result.add(new Parm_Id(buffer.toString()));
 						buffer.setLength(0);
-						result.add(new ParmsToken_Id("="));
+						result.add(new Parm_Id("="));
 //						System.out.println(Helpers.dformat("%s", result));
 					} else if ('\'' == c) {
 						parseMode = ParseMode.STRING;
 					} else if ('(' == c) {
 						grouping.push(result.size());
 					} else if (')' == c) {
-						result.add(new ParmsToken_Id(buffer.toString()));
+						result.add(new Parm_Id(buffer.toString()));
 						buffer.setLength(0);
 						detectDfn.run();
 
 						final var j = grouping.pop();
-						final var group = new ParmsToken_Group();
+						final var group = new Parm_Grp();
 						final var groupTokens = result.subList(j, result.size());
-						group.getTokens().addAll(groupTokens);
+						group.getElts().addAll(groupTokens);
 						
 //						System.out.println(Helpers.dformat("%s %s %s", j, result.size(), groupTokens));
 						
@@ -294,7 +300,7 @@ public abstract class JclStmtParser extends JclLineParser {
 					break;
 				case STRING:
 					if ('\'' == c) {
-						result.add(new ParmsToken_String(buffer.toString()));
+						result.add(new Parm_Str(buffer.toString()));
 						buffer.setLength(0);
 						
 						parseMode = ParseMode.GROUP_END;
@@ -309,7 +315,7 @@ public abstract class JclStmtParser extends JclLineParser {
 			}
 			
 			if (0 < buffer.length()) {
-				result.add(new ParmsToken_Id(buffer.toString()));
+				result.add(new Parm_Id(buffer.toString()));
 			}
 			
 			detectDfn.run();
@@ -322,17 +328,17 @@ public abstract class JclStmtParser extends JclLineParser {
 	/**
 	 * @author 2oLDNncs 20250406
 	 */
-	public static final class ParmsToken_Group extends ParmsToken {
+	public static final class Parm_Grp extends Parm {
 		
-		private final List<ParmsToken> tokens = new ArrayList<>();
+		private final List<Parm> elts = new ArrayList<>();
 		
-		public final List<ParmsToken> getTokens() {
-			return this.tokens;
+		public final List<Parm> getElts() {
+			return this.elts;
 		}
 		
 		@Override
 		public final String toString() {
-			return "¤" + this.getTokens().toString();
+			return "¤" + this.getElts().toString();
 		}
 		
 	}
@@ -340,28 +346,28 @@ public abstract class JclStmtParser extends JclLineParser {
 	/**
 	 * @author 2oLDNncs 20250406
 	 */
-	public static final class ParmsToken_Dfn extends ParmsToken {
+	public static final class Parm_Dfn extends Parm {
 		
 		private final String key;
 		
-		private final ParmsToken value;
+		private final Parm val;
 		
-		public ParmsToken_Dfn(String key, ParmsToken value) {
+		public Parm_Dfn(final String key, final Parm val) {
 			this.key = key;
-			this.value = value;
+			this.val = val;
 		}
 		
 		public final String getKey() {
 			return this.key;
 		}
 		
-		public final ParmsToken getValue() {
-			return this.value;
+		public final Parm getVal() {
+			return this.val;
 		}
 		
 		@Override
 		public final String toString() {
-			return "¤" + String.format("%s=%s", this.getKey(), this.getValue());
+			return "¤" + String.format("%s=%s", this.getKey(), this.getVal());
 		}
 		
 	}
@@ -369,16 +375,16 @@ public abstract class JclStmtParser extends JclLineParser {
 	/**
 	 * @author 2oLDNncs 20250406
 	 */
-	public static abstract class ParmsToken_Atom extends ParmsToken {
+	public static abstract class Parm_Atom extends Parm {
 		
-		private final String value;
+		private final String val;
 		
-		protected ParmsToken_Atom(final String value) {
-			this.value = value;
+		protected Parm_Atom(final String val) {
+			this.val = val;
 		}
 		
-		public final String getValue() {
-			return this.value;
+		public final String getVal() {
+			return this.val;
 		}
 		
 	}
@@ -386,37 +392,37 @@ public abstract class JclStmtParser extends JclLineParser {
 	/**
 	 * @author 2oLDNncs 20250406
 	 */
-	public static final class ParmsToken_Id extends ParmsToken_Atom {
+	public static final class Parm_Id extends Parm_Atom {
 		
-		public ParmsToken_Id(final String value) {
-			super(value);
+		public Parm_Id(final String val) {
+			super(val);
 		}
 		
 		@Override
 		public final String toString() {
-			return "¤" + this.getValue();
+			return "¤" + this.getVal();
 		}
 		
-		public static final ParmsToken_Id T_SPAC = new ParmsToken_Id(" ");
-		public static final ParmsToken_Id T_DELI = new ParmsToken_Id(",");
-		public static final ParmsToken_Id T_LPAR = new ParmsToken_Id("(");
-		public static final ParmsToken_Id T_RPAR = new ParmsToken_Id(")");
-		public static final ParmsToken_Id T_EQUA = new ParmsToken_Id("=");
+		public static final Parm_Id T_SPAC = new Parm_Id(" ");
+		public static final Parm_Id T_DELI = new Parm_Id(",");
+		public static final Parm_Id T_LPAR = new Parm_Id("(");
+		public static final Parm_Id T_RPAR = new Parm_Id(")");
+		public static final Parm_Id T_EQUA = new Parm_Id("=");
 		
 	}
 	
 	/**
 	 * @author 2oLDNncs 20250406
 	 */
-	public static final class ParmsToken_String extends ParmsToken_Atom {
+	public static final class Parm_Str extends Parm_Atom {
 		
-		public ParmsToken_String(final String value) {
-			super(value);
+		public Parm_Str(final String val) {
+			super(val);
 		}
 		
 		@Override
 		public final String toString() {
-			return "¤" + String.format("'%s'", this.getValue());
+			return "¤" + String.format("'%s'", this.getVal());
 		}
 		
 	}
@@ -463,7 +469,7 @@ public abstract class JclStmtParser extends JclLineParser {
 		
 		private final String type;
 		
-		private final List<Object> parms = new ArrayList<>();
+		private final List<Parm> parms = new ArrayList<>();
 		
 		private final List<String> input = new ArrayList<>();
 		
@@ -499,12 +505,47 @@ public abstract class JclStmtParser extends JclLineParser {
 			return this.location.errorMessage(prefixFormat, prefixArgs);
 		}
 		
-		public final List<Object> getParms() {
+		public final List<Parm> getParms() {
 			return this.parms;
 		}
 		
 		public final List<String> getInput() {
 			return this.input;
+		}
+		
+		public final Parm findParmVal(final String parmKey) {
+			final var itStack = new Stack<Iterator<Parm>>();
+			
+			itStack.push(this.getParms().iterator());
+			
+			while (!itStack.isEmpty()) {
+				final var it = itStack.peek();
+				
+				if (it.hasNext()) {
+					final var parm = it.next();
+					
+					if (parm instanceof Parm_Grp) {
+						itStack.pop();
+						itStack.push(((Parm_Grp) parm).getElts().iterator());
+					} else if (parm instanceof Parm_Dfn) {
+						final var dfn = (Parm_Dfn) parm;
+						final var dfnKey = dfn.getKey();
+						final var dfnValue = dfn.getVal();
+						
+						if (Objects.equals(parmKey, dfnKey)) {
+							return dfnValue;
+						}
+						
+						if (dfnValue instanceof Parm_Grp) {
+							itStack.push(((Parm_Grp) dfnValue).getElts().iterator());
+						}
+					}
+				} else {
+					itStack.pop();
+				}
+			}
+			
+			return null;
 		}
 		
 		@Override
