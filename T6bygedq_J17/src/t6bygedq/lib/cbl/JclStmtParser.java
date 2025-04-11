@@ -44,7 +44,7 @@ public abstract class JclStmtParser extends JclLineParser {
 			}
 		}
 		
-		if (true) {
+		{
 			final var tokens = new ArrayList<Parm>();
 			
 			try {
@@ -60,9 +60,6 @@ public abstract class JclStmtParser extends JclLineParser {
 			}
 			
 			this.currentStmt.getParms().addAll(tokens);
-		} else {
-//			this.currentStmt.getParms().addAll(Arrays.asList(parms.split(",")));
-			this.currentStmt.getParms().addAll(Parm.parse(parms));
 		}
 	}
 	
@@ -141,21 +138,22 @@ public abstract class JclStmtParser extends JclLineParser {
 	private static final void parseGrps(final List<Parm> tokens) {
 		final var grouping = new Stack<Integer>();
 		
-		for (var i = 0; i < tokens.size(); i += 1) {
-			final var token = tokens.get(i);
+		for (var j = 0; j < tokens.size(); j += 1) {
+			final var token = tokens.get(j);
 			
 			if (Parm_Id.T_LPAR == token) {
-				grouping.push(i);
+				grouping.push(j);
 			} else if (Parm_Id.T_RPAR == token) {
-				final var j = grouping.pop();
-				final var group = new ArrayList<>(tokens.subList(j + 1, i));
+				final var i = grouping.pop();
+				final var group = new ArrayList<>(tokens.subList(i + 1, j));
+				
 				parseElts(group);
-				final var subList = tokens.subList(j, i + 1);
-				subList.clear();
-				final var grp = new Parm_Grp();
-				grp.getElts().addAll(group);
-				subList.add(grp);
-				i = j;
+				
+				final var grp = newGrp(group);
+				
+				replaceSubList(tokens, i, j + 1, grp);
+				
+				j = i;
 			}
 		}
 		
@@ -171,18 +169,10 @@ public abstract class JclStmtParser extends JclLineParser {
 				
 				parseDfns(group);
 				
-				final var subList = tokens.subList(i, j + 1);
-				subList.clear();
+				final var p = 1 == group.size() ? group.get(0) : newGrp(group);
 				
-				if (1 == group.size()) {
-					subList.add(group.get(0));
-				} else {
-					final var grp = new Parm_Grp();
-					
-					grp.getElts().addAll(group);
-					
-					subList.add(grp);
-				}
+				replaceSubList(tokens, i, j + 1, p);
+				
 				j = i;
 				i += 1;
 			}
@@ -199,130 +189,32 @@ public abstract class JclStmtParser extends JclLineParser {
 				final var keyToken = tokens.get(i - 1);
 				final var valToken = tokens.get(i + 1);
 				final var dfn = new Parm_Dfn(((Parm_Id) keyToken).getVal(), valToken);
-				final var subList = tokens.subList(i - 1, i + 2);
-				subList.clear();
-				subList.add(dfn);
+				
+				replaceSubList(tokens, i - 1, i + 2, dfn);
+				
 				i -= 1;
 			}
 		}
+	}
+	
+	private static final Parm_Grp newGrp(final List<Parm> elts) {
+		final var result = new Parm_Grp();
+		
+		result.getElts().addAll(elts);
+		
+		return result;
+	}
+	
+	public static final <E> void replaceSubList(final List<E> list, final int start, final int end, final E element) {
+		list.subList(start, end).clear();
+		list.add(start, element);
 	}
 	
 	/**
 	 * @author 2oLDNncs 20250406
 	 */
 	public static abstract class Parm {
-		
-		public static final List<Parm> parse(final String parms) {
-			final var result = new ArrayList<Parm>();
-			final var buffer = new StringBuilder();
-			final var grouping = new Stack<Integer>();
-			
-			final Runnable detectDfn = () -> {
-				final var n = result.size();
-				
-				if (3 <= n && "=".equals(result.get(n - 2).toString()) &&
-						(grouping.isEmpty() || grouping.peek() <= n - 3)) {
-					final var dfn = new Parm_Dfn(result.get(n - 3).toString(), result.get(n - 1));
-					result.subList(n - 3, n).clear();
-					result.add(dfn);
-				}
-			};
-			
-			enum ParseMode {
-				NORMAL, STRING, GROUP_END;
-			}
-			
-			var parseMode = ParseMode.NORMAL;
-			final var n = parms.length();
-			
-			for (var i = 0; i < n; i += 1) {
-				final var c = parms.charAt(i);
-				
-				switch (parseMode) {
-				case GROUP_END:
-					if (',' == c) {
-						detectDfn.run();
-						parseMode = ParseMode.NORMAL;
-					} else if (')' == c) {
-						parseMode = ParseMode.NORMAL;
-					} else if (' ' == c) {
-						i = n;
-						parseMode = ParseMode.NORMAL;
-					} else if ('\'' == c) {
-						buffer.append(((Parm_Str) result.remove(result.size() - 1)).getVal());
-						buffer.append(c);
-						parseMode = ParseMode.STRING;
-					} else {
-						System.err.println(String.format("Unexpected char <%s>", c));
-						i = n;
-						parseMode = ParseMode.NORMAL;
-					}
-					
-					break;
-				case NORMAL:
-					if (',' == c) {
-						result.add(new Parm_Id(buffer.toString()));
-						buffer.setLength(0);
-						detectDfn.run();
-					} else if ('=' == c) {
-						result.add(new Parm_Id(buffer.toString()));
-						buffer.setLength(0);
-						result.add(new Parm_Id("="));
-//						System.out.println(Helpers.dformat("%s", result));
-					} else if ('\'' == c) {
-						parseMode = ParseMode.STRING;
-					} else if ('(' == c) {
-						grouping.push(result.size());
-					} else if (')' == c) {
-						result.add(new Parm_Id(buffer.toString()));
-						buffer.setLength(0);
-						detectDfn.run();
-
-						final var j = grouping.pop();
-						final var group = new Parm_Grp();
-						final var groupTokens = result.subList(j, result.size());
-						group.getElts().addAll(groupTokens);
-						
-//						System.out.println(Helpers.dformat("%s %s %s", j, result.size(), groupTokens));
-						
-						groupTokens.clear();
-						result.add(group);
-						
-						detectDfn.run();
-						
-						parseMode = ParseMode.GROUP_END;
-					} else if (' ' == c) {
-						i = n;
-					} else {
-						buffer.append(c);
-					}
-					
-					break;
-				case STRING:
-					if ('\'' == c) {
-						result.add(new Parm_Str(buffer.toString()));
-						buffer.setLength(0);
-						
-						parseMode = ParseMode.GROUP_END;
-					} else {
-						buffer.append(c);
-					}
-					
-					break;
-				default:
-					break;
-				}
-			}
-			
-			if (!buffer.isEmpty()) {
-				result.add(new Parm_Id(buffer.toString()));
-			}
-			
-			detectDfn.run();
-			
-			return result;
-		}
-		
+		//pass
 	}
 	
 	/**
