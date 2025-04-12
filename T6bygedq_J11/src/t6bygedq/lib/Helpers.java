@@ -10,6 +10,8 @@ import java.lang.annotation.Target;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
+import java.util.stream.Stream;
+import java.util.stream.StreamSupport;
 
 /**
  * @author 2oLDNncs 20241228
@@ -26,6 +28,21 @@ public final class Helpers {
 		System.arraycopy(elements, 0, result, array.length, elements.length);
 		
 		return result;
+	}
+	
+	public static String join(final String delimiter, final Object... args) {
+		return join(delimiter, Arrays.stream(args));
+	}
+	
+	public static String join(final String delimiter, final Iterable<?> args) {
+		return join(delimiter, StreamSupport.stream(args.spliterator(), false));
+	}
+	
+	public static String join(final String delimiter, final Stream<?> args) {
+		return String.join(delimiter,
+				args
+				.map(Objects::toString)
+				.toArray(String[]::new));
 	}
 	
 	@SuppressWarnings("unchecked")
@@ -142,12 +159,12 @@ public final class Helpers {
 	}
 	
 	public static final String dformat(final String format, final Object... args) {
-		return dformat(2, format, args);
+		return dformat(3, format, args);
 	}
 	
 	public static final String dformat(final int stackLevel, final String format, final Object... args) {
 		final var stackTrace = Thread.currentThread().getStackTrace();
-		final var callerSte = stackTrace[3];
+		final var callerSte = stackTrace[stackLevel];
 		
 		return String.format("(%s:%s) %s",
 				callerSte.getFileName(),

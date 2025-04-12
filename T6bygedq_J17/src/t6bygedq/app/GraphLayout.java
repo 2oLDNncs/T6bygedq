@@ -17,7 +17,9 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
-import java.util.TreeMap;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.IntFunction;
@@ -32,20 +34,25 @@ import javax.xml.stream.XMLStreamException;
 import javax.xml.stream.XMLStreamWriter;
 
 import t6bygedq.lib.Helpers;
+import t6bygedq.lib.Log;
+import t6bygedq.lib.LogLevel;
 
 /**
  * @author 2oLDNncs 20250401
  */
+@LogLevel(3)
 public final class GraphLayout {
+	
+	private static final String K_DEBUG = "Debug";
 	
 	public static final void main(final String[] args) throws IOException, XMLStreamException {
 		final var g = new Graph();
 		
 		{
-			System.out.println(Helpers.dformat("Creating graph..."));
+			Log.begin(1, "Creating graph");
 			
-			final var nbNodes = 4000;
-			final var nbEdges = nbNodes * nbNodes * 1 / 1024;
+			final var nbNodes = 200;
+			final var nbEdges = nbNodes * nbNodes * 1 / 32;
 			final var rand = new Random(nbNodes);
 			
 			IntStream.range(0, nbNodes).forEach(__ -> g.addNode());
@@ -60,7 +67,7 @@ public final class GraphLayout {
 				allPossibleEdges.subList(0, nbEdges).forEach(e -> g.getNode(e / nbNodes).edgeTo(g.getNode(e % nbNodes)));
 			}
 			
-			System.out.println(Helpers.dformat("Creating graph... Done"));
+			Log.done();
 		}
 		
 		applyHierarchicalGridLayout(g);
@@ -68,9 +75,237 @@ public final class GraphLayout {
 		writeSvg(g, "data/graph.svg");
 	}
 	
+	public static void applyHierarchicalGridLayout(final Graph g) {
+		Log.begin(1, "Appying Hierarchical Grid Layout");
+		Log.outf(2, "Nodes: %s Edges: %s", g.countNodes(), g.countEdges());
+		
+		final var roots = g.nodes.stream().filter(Graph.Node::isRoot).toList();
+		
+		Log.outf(2, "Roots: %s", roots.size());
+		
+//		final var grid = new TreeMap<Integer, List<Graph.Node>>();
+		final var grid = new ArrayList<List<Graph.Node>>();
+		final IntFunction<List<Graph.Node>> getRow = rowIndex -> computeIfAbsent(grid, rowIndex);
+		
+		computeNodeDepth(roots, getRow);
+		
+		g.forEach(node -> computeNodeDepth(Arrays.asList(node), getRow));
+		
+		if (Log.isEnabled(4)) {
+			g.forEach(node -> {
+				Log.outf(0, "%s %s", node.getIndex(), node.props);
+			});
+		}
+		
+		if (Log.isEnabled(3)) {
+			IntStream.range(0, grid.size()).forEach(k -> {
+				Log.outf(0, "%s%s", k, grid.get(k));
+			});
+		}
+		
+		{
+			final var gridBounds = new Rectangle();
+			
+			g.forEach(node -> {
+				gridBounds.add((int) node.props.get(K_COL) + 1, (int) node.props.get(K_ROW) + 1);
+			});
+			
+			Log.out(1, gridBounds);
+			
+			final var gridWalls = new HashMap<Collection<Point2D>, GridWall>();
+			final var count = new AtomicLong();
+			
+			g.forEach(srcNode -> {
+				final var srcRow = (int) srcNode.props.get(K_ROW);
+				final var srcCol = (int) srcNode.props.get(K_COL);
+				
+				srcNode.forEachOutgoing(edge -> {
+					final var dstNode = edge.getEndNode();
+					final var path = new ArrayList<Point2D>();
+					
+					final Consumer<Point2D> addToPath = p -> {
+						if (path.isEmpty()) {
+							path.add(p);
+						} else {
+							final var tmp = (Point2D) Helpers.last(path).clone();
+							final var dx = Math.signum(p.getX() - tmp.getX()) / 2.0;
+							final var dy = Math.signum(p.getY() - tmp.getY()) / 2.0;
+							
+							if (0.5 <= tmp.distance(p)) {
+								tmp.setLocation(tmp.getX() + dx, tmp.getY() + dy);
+								
+								while (0.5 <= tmp.distance(p)) {
+									path.add((Point2D) tmp.clone());
+									tmp.setLocation(tmp.getX() + dx, tmp.getY() + dy);
+								}
+								
+								path.add(p);
+							}
+						}
+						if (path.isEmpty() || !Helpers.last(path).equals(p)) {
+							path.add(p);
+						}
+					};
+					
+					addToPath.accept(new Point2D.Double(srcCol, srcRow));
+					
+					final var dstRow = (int) dstNode.props.get(K_ROW);
+					final var dstCol = (int) dstNode.props.get(K_COL);
+					
+					if (dstRow < srcRow) { // North
+						if (dstCol < srcCol) { // West
+							addToPath.accept(new Point2D.Double(srcCol - 0.5, srcRow));
+							addToPath.accept(new Point2D.Double(srcCol - 0.5, dstRow + 0.5));
+							addToPath.accept(new Point2D.Double(dstCol + 0.5, dstRow + 0.5));
+							addToPath.accept(new Point2D.Double(dstCol + 0.5, dstRow));
+						} else if (srcCol == dstCol) {
+							if (dstRow + 1 == srcRow) {
+								addToPath.accept(new Point2D.Double(srcCol, srcRow - 0.5));
+							} else {
+								addToPath.accept(new Point2D.Double(srcCol - 0.5, srcRow));
+								addToPath.accept(new Point2D.Double(srcCol - 0.5, dstRow));
+							}
+						} else if (srcCol < dstCol) { // East
+							addToPath.accept(new Point2D.Double(srcCol + 0.5, srcRow));
+							addToPath.accept(new Point2D.Double(srcCol + 0.5, dstRow + 0.5));
+							addToPath.accept(new Point2D.Double(dstCol - 0.5, dstRow + 0.5));
+							addToPath.accept(new Point2D.Double(dstCol - 0.5, dstRow));
+						}
+					} else if (srcRow == dstRow) {
+						if (dstCol < srcCol) { // West
+							if (dstCol + 1 == srcCol) {
+								addToPath.accept(new Point2D.Double(srcCol - 0.5, srcRow));
+							} else {
+								addToPath.accept(new Point2D.Double(srcCol - 0.5, srcRow));
+								addToPath.accept(new Point2D.Double(srcCol - 0.5, srcRow + 0.5));
+								addToPath.accept(new Point2D.Double(dstCol + 0.5, dstRow + 0.5));
+								addToPath.accept(new Point2D.Double(dstCol + 0.5, dstRow));
+							}
+						} else if (srcCol == dstCol) {
+							addToPath.accept(new Point2D.Double(srcCol + 0.5, srcRow));
+							addToPath.accept(new Point2D.Double(srcCol + 0.5, srcRow - 0.5));
+							addToPath.accept(new Point2D.Double(srcCol, srcRow - 0.5));
+						} else if (srcCol < dstCol) { // East
+							if (srcCol + 1 == dstCol) {
+								addToPath.accept(new Point2D.Double(srcCol + 0.5, srcRow));
+							} else {
+								addToPath.accept(new Point2D.Double(srcCol + 0.5, srcRow));
+								addToPath.accept(new Point2D.Double(srcCol + 0.5, srcRow + 0.5));
+								addToPath.accept(new Point2D.Double(dstCol - 0.5, dstRow + 0.5));
+								addToPath.accept(new Point2D.Double(dstCol - 0.5, dstRow));
+							}
+						}
+					} else if (srcRow < dstRow) { // South
+						if (dstCol < srcCol) { // West
+							addToPath.accept(new Point2D.Double(srcCol, srcRow + 0.5));
+							addToPath.accept(new Point2D.Double(dstCol + 0.5, srcRow + 0.5));
+							addToPath.accept(new Point2D.Double(dstCol + 0.5, dstRow - 0.5));
+							addToPath.accept(new Point2D.Double(dstCol, dstRow - 0.5));
+						} else if (srcCol == dstCol) {
+							if (srcRow + 1 == dstRow) {
+								addToPath.accept(new Point2D.Double(srcCol, srcRow + 0.5));
+							} else {
+								addToPath.accept(new Point2D.Double(srcCol, srcRow + 0.5));
+								addToPath.accept(new Point2D.Double(srcCol - 0.5, srcRow + 0.5));
+								addToPath.accept(new Point2D.Double(dstCol - 0.5, dstRow - 0.5));
+								addToPath.accept(new Point2D.Double(dstCol, dstRow - 0.5));
+							}
+						} else if (srcCol < dstCol) { // East
+							addToPath.accept(new Point2D.Double(srcCol, srcRow + 0.5));
+							addToPath.accept(new Point2D.Double(dstCol - 0.5, srcRow + 0.5));
+							addToPath.accept(new Point2D.Double(dstCol - 0.5, dstRow - 0.5));
+							addToPath.accept(new Point2D.Double(dstCol, dstRow - 0.5));
+							edge.props.put(K_DEBUG, count.getAndIncrement() == 0L);
+						}
+					}
+					
+					addToPath.accept(new Point2D.Double(dstCol, dstRow));
+					
+//					Log.outf(1, "%s", path);
+					
+					edge.props.put(K_GRID_PATH, path);
+					
+					final var segments = new ArrayList<List<Point2D>>();
+					final var walls = new ArrayList<GridWall>();
+					
+					for (var i = 0; i + 1 < path.size(); i += 1) {
+						final var segment = Arrays.asList((Point2D) path.get(i).clone(), (Point2D) path.get(i + 1).clone());
+						segments.add(segment);
+						final var wall = gridWalls.computeIfAbsent(Set.of(path.get(i), path.get(i + 1)), GridWall::new);
+						walls.add(wall);
+						
+						wall.edges.add(edge);
+					}
+					
+					edge.props.put(K_GRID_SEGMENTS, segments);
+					edge.props.put(K_GRID_WALLS, walls);
+				});
+			});
+			
+			g.forEach(node -> {
+				node.forEachOutgoing(edge -> {
+					final List<List<Point2D>> segments = Helpers.cast(edge.props.get(K_GRID_SEGMENTS));
+					final List<GridWall> walls = Helpers.cast(edge.props.get(K_GRID_WALLS));
+					
+					for (var i = 0; i < segments.size(); i += 1) {
+						final var offset = walls.get(i).getSegmentOffset(edge);
+						
+//						Log.out(1, segments.get(i), offset);
+						segments.get(i).forEach(p -> {
+							p.setLocation(p.getX() + offset.getX(), p.getY() + offset.getY());
+						});
+//						Log.out(1, segments.get(i));
+						
+					}
+				});
+			});
+		}
+		
+		Log.done();
+	}
+	
+	/**
+	 * @author 2oLDNncs 20250412
+	 */
+	public static final class GridWall {
+		
+		private final Collection<Point2D> key;
+		
+		private final Point2D direction = new Point2D.Double(1.0, 0.0);
+		
+		private final List<Graph.Edge> edges = new ArrayList<>();
+		
+		public GridWall(final Collection<Point2D> key) {
+			this.key = key;
+			final var keyPoints = key.toArray(Point2D[]::new);
+			
+			if (keyPoints[0].getX() != keyPoints[1].getX()) {
+				this.direction.setLocation(0.0, 1.0);
+			}
+			
+			Log.out(0, key, this.direction);
+		}
+		
+		public final Point2D getSegmentOffset(final Graph.Edge edge) {
+			final var i = this.edges.indexOf(edge);
+			
+			if (i < 0) {
+				throw new IllegalStateException();
+			}
+			
+			final var t = (i + 1.0) / (this.edges.size() + 1.0);
+			final var scale = 0.5;
+			
+			return new Point2D.Double(
+					lerp(-this.direction.getX() * scale / 2.0, this.direction.getX() * scale / 2.0, t),
+					lerp(-this.direction.getY() * scale / 2.0, this.direction.getY() * scale / 2.0, t));
+		}
+		
+	}
+	
 	public static final void writeSvg(final Graph g, final String filePath)
 			throws XMLStreamException, FactoryConfigurationError, FileNotFoundException {
-		System.out.println(Helpers.dformat("Writing svg %s...", filePath));
+		Log.beginf(1, "Writing svg %s", filePath);
 		
 		try (final var svgOut = new PrintStream(filePath)) {
 			final var svg = XMLOutputFactory.newFactory().createXMLStreamWriter(svgOut);
@@ -132,23 +367,142 @@ public final class GraphLayout {
 						final var a1 = getOutline(node, nodeWidth, nodeHeight);
 						
 						for (final var edge : node.outgoingEdges) {
-							final var a2 = new Area(a1);
-							final var a3 = new Area(getOutline(edge.getEndNode(), nodeWidth, nodeHeight));
-							final var a4 = getOutline(edge);
+							final List<Point2D> gridPath = Helpers.cast(edge.props.get(K_GRID_PATH));
+							final List<List<Point2D>> gridSegments = Helpers.cast(edge.props.get(K_GRID_SEGMENTS));
+							final var dBuilder = new StringBuilder();
 							
-							a2.intersect(a4);
-							a3.intersect(a4);
+							final BiConsumer<String, Point2D> appendXY = (t, p) -> {
+								dBuilder.append(t);
+								dBuilder.append(gridOffsetX + p.getX() * cellWidth);
+								dBuilder.append(",");
+								dBuilder.append(gridOffsetY + p.getY() * cellHeight);
+							};
 							
-							xmlElement(svg, "path", () -> {
-								svg.writeAttribute("fill", "none");
-								svg.writeAttribute("stroke", "black");
-								svg.writeAttribute("d", String.format("M%s,%sL%s,%s",
-										a2.getBounds2D().getCenterX(),
-										a2.getBounds2D().getCenterY(),
-										a3.getBounds2D().getCenterX(),
-										a3.getBounds2D().getCenterY()));
-								svg.writeAttribute("marker-end", "url(#head)");
-							});
+							if (null != gridSegments) {
+								for (var i = 0; i + 1 < gridSegments.size(); i += 1) {
+									final var si = gridSegments.get(i);
+									final var sj = gridSegments.get(i + 1);
+									appendXY.accept("M", lerp(si.get(0), si.get(1), 0.5));
+									appendXY.accept("C", lerp(si.get(0), si.get(1), 0.75));
+									appendXY.accept(" ", lerp(sj.get(0), sj.get(1), 0.25));
+									appendXY.accept(" ", lerp(sj.get(0), sj.get(1), 0.5));
+								}
+								
+								xmlElement(svg, "path", () -> {
+									svg.writeAttribute("fill", "none");
+									if (node == edge.getEndNode()) {
+										svg.writeAttribute("stroke", "red");
+//										Log.out(1, gridSegments);
+									} else {
+										svg.writeAttribute("stroke", "black");
+									}
+									svg.writeAttribute("stroke-width", "0.25");
+									if (Boolean.TRUE.equals(edge.props.get(K_DEBUG)) || true) {
+										svg.writeAttribute("d", dBuilder.toString());
+									}
+									svg.writeAttribute("marker-end", "url(#head)");
+								});
+								
+								if (false) {
+									final BiConsumer<Point2D, String> makeDot = (p, c) -> {
+										try {
+											final double rScale;
+											
+											if ("red".equals(c)) {
+												rScale = 0.5;
+											} else if ("green".equals(c)) {
+												rScale = 0.75;
+											} else {
+												rScale = 1.0;
+											}
+											
+											xmlElement(svg, "ellipse", () -> {
+												svg.writeAttribute("fill", c);
+												svg.writeAttribute("stroke", "none");
+												svg.writeAttribute("cx", "" + (gridOffsetX + p.getX() * cellWidth));
+												svg.writeAttribute("cy", "" + (gridOffsetY + p.getY() * cellHeight));
+												svg.writeAttribute("rx", "" + nodeWidth * rScale / 16.0);
+												svg.writeAttribute("ry", "" + nodeHeight * rScale / 16.0);
+												svg.writeAttribute("style", "");
+											});
+										} catch (final XMLStreamException e) {
+											throw new RuntimeException(e);
+										}
+									};
+									
+									for (final var segment : gridSegments) {
+										makeDot.accept(segment.get(0), "red");
+										makeDot.accept(lerp(segment.get(0), segment.get(1), 0.5), "green");
+										makeDot.accept(segment.get(1), "blue");
+									}
+								}
+							} else if (null != gridPath) {
+								appendXY.accept("M", lerp(gridPath.get(0), gridPath.get(1), 1.0 / 8.0));
+								
+								if (2 < gridPath.size()) {
+									appendXY.accept("L", gridPath.get(1));
+								} else {
+									appendXY.accept("L", lerp(gridPath.get(0), gridPath.get(1), 7.0 / 8.0));
+								}
+								
+								for (var i = 2; i < gridPath.size(); i += 1) {
+									if (i + 1 < gridPath.size()) {
+										appendXY.accept(" ", gridPath.get(i));
+									} else {
+										appendXY.accept(" ", lerp(gridPath.get(i - 1), gridPath.get(i), 7.0 / 8.0));
+									}
+								}
+								
+								xmlElement(svg, "path", () -> {
+									svg.writeAttribute("fill", "none");
+									svg.writeAttribute("stroke", "black");
+									if (edge.props.containsKey(K_DEBUG) || true) {
+										svg.writeAttribute("d", dBuilder.toString());
+									}
+									svg.writeAttribute("marker-end", "url(#head)");
+								});
+							} else if (node == edge.getEndNode()) {
+								xmlElement(svg, "path", () -> {
+									svg.writeAttribute("fill", "none");
+									svg.writeAttribute("stroke", "black");
+									svg.writeAttribute("d", String.format("M%s,%sC%s,%s %s,%s %s,%s",
+											nodeX + cellWidth * 1/ 8,
+											nodeY - cellHeight * 1/ 8,
+											nodeX + cellWidth * 4 / 8,
+											nodeY - cellHeight * 5 / 8,
+											nodeX - cellWidth * 4 / 8,
+											nodeY - cellHeight * 5 / 8,
+											nodeX - cellWidth * 1/ 8,
+											nodeY - cellHeight * 1/ 8));
+									svg.writeAttribute("marker-end", "url(#head)");
+								});
+							} else {
+								final var a2 = new Area(a1);
+								final var a3 = new Area(getOutline(edge.getEndNode(), nodeWidth, nodeHeight));
+								final var a4 = getOutline(edge);
+								
+								a2.intersect(a4);
+								a3.intersect(a4);
+								
+								if (a2.isEmpty()) {
+									Log.err(1, "Failed to compute geometric origin for edge %s", edge);
+								}
+								
+								if (a3.isEmpty()) {
+									Log.err(1, "Failed to compute geometric destination for edge %s", edge);
+								}
+								
+								xmlElement(svg, "path", () -> {
+									svg.writeAttribute("fill", "none");
+									svg.writeAttribute("stroke", "black");
+									svg.writeAttribute("d", String.format("M%s,%sL%s,%s",
+											a2.getBounds2D().getCenterX(),
+											a2.getBounds2D().getCenterY(),
+											a3.getBounds2D().getCenterX(),
+											a3.getBounds2D().getCenterY()));
+									svg.writeAttribute("marker-end", "url(#head)");
+								});
+							}
 						}
 					}
 				});
@@ -157,30 +511,19 @@ public final class GraphLayout {
 			}
 		}
 		
-		System.out.println(Helpers.dformat("Writing svg %s... Done", filePath));
+		Log.done();
+		
+		Log.out(1, "times:", times);
 	}
 	
-	public static void applyHierarchicalGridLayout(final Graph g) {
-		System.out.println(Helpers.dformat("Appying Hierarchical Grid Layout..."));
-		
-		System.out.println(Helpers.dformat("Nodes: %s Edges: %s", g.countNodes(), g.countEdges()));
-		
-		final var roots = g.nodes.stream().filter(Graph.Node::isRoot).toList();
-		
-		System.out.println(Helpers.dformat("Roots: %s", roots.size()));
-		
-		final var grid = new TreeMap<Integer, List<Graph.Node>>();
-		
-		computeNodeDepth(roots, grid);
-		
-		g.nodes.forEach(node -> computeNodeDepth(Arrays.asList(node), grid));
-		
-//		g.nodes.forEach(node -> System.out.println(Helpers.dformat("%s %s", node.getIndex(), node.props)));
-		grid.forEach((k, v) -> {
-			System.out.println(Helpers.dformat("%s%s", k, v));
-		});
-		
-		System.out.println(Helpers.dformat("Appying Hierarchical Grid Layout... Done"));
+	public static final double lerp(final double a, final double b, final double t) {
+		return a + t * (b - a);
+	}
+	
+	public static final Point2D lerp(final Point2D a, final Point2D b, final double t) {
+		return new Point2D.Double(
+				lerp(a.getX(), b.getX(), t),
+				lerp(a.getY(), b.getY(), t));
 	}
 	
 	public static final String K_X = "X";
@@ -221,11 +564,15 @@ public final class GraphLayout {
 		});
 	}
 	
+	private static final Map<String, AtomicLong> times = new HashMap<>();
+	
 	public static final void xmlElement(final XMLStreamWriter writer, final String localName,
 			final ElementBuilder builder) throws XMLStreamException {
+		final var t0 = System.currentTimeMillis();
 		writer.writeStartElement(localName);
 		builder.build();
 		writer.writeEndElement();;
+		times.computeIfAbsent(localName, __ -> new AtomicLong()).addAndGet(System.currentTimeMillis() - t0);
 	}
 	
 	/**
@@ -239,12 +586,27 @@ public final class GraphLayout {
 	
 	public static final String K_ROW = "Row";
 	public static final String K_COL = "Col";
+	public static final String K_GRID_PATH = "GridPath";
+	public static final String K_GRID_SEGMENTS = "GridSegments";
+	public static final String K_GRID_WALLS = "GridWalls";
 	
-	public static final void computeNodeDepth(final Collection<Graph.Node> nodes, final Map<Integer, List<Graph.Node>> grid) {
+	public static final <K, E> List<E> computeIfAbsent(final Map<K, List<E>> map, final K key) {
+		return map.computeIfAbsent(key, __ -> new ArrayList<>());
+	}
+	
+	public static final <E> List<E> computeIfAbsent(final List<List<E>> map, final int key) {
+		while (map.size() <= key) {
+			map.add(new ArrayList<>());
+		}
+		
+		return map.get(key);
+	}
+	
+	public static final void computeNodeDepth(final Collection<Graph.Node> nodes, final IntFunction<List<Graph.Node>> getRow) {
 		final var todo = new ArrayList<Graph.Node>();
 		
 		final Function<Integer, Consumer<Graph.Node>> applyDepth = d -> node -> {
-			final var row = grid.computeIfAbsent(d, __ -> new ArrayList<>());
+			final var row = getRow.apply(d);
 			node.props.put(K_ROW, d);
 			node.props.put(K_COL, row.size());
 			row.add(node);
@@ -272,9 +634,18 @@ public final class GraphLayout {
 	}
 	
 	/**
+	 * @author 2oLDNncs 20250402
+	 */
+	public static abstract class Obj {
+		
+		public final Map<String, Object> props = new HashMap<>();
+		
+	}
+	
+	/**
 	 * @author 2oLDNncs 20250401
 	 */
-	public static final class Graph {
+	public static final class Graph extends Obj {
 		
 		private final List<Node> nodes = new ArrayList<>();
 		
@@ -284,6 +655,10 @@ public final class GraphLayout {
 			this.nodes.add(result);
 			
 			return result;
+		}
+		
+		public final void forEach(final Consumer<? super Node> action) {
+			this.nodes.forEach(action);
 		}
 		
 		public final int countNodes() {
@@ -296,15 +671,6 @@ public final class GraphLayout {
 		
 		public final int countEdges() {
 			return this.nodes.stream().mapToInt(Node::countOutgoingEdges).sum();
-		}
-		
-		/**
-		 * @author 2oLDNncs 20250402
-		 */
-		public static abstract class Obj {
-			
-			public final Map<String, Object> props = new HashMap<>();
-			
 		}
 		
 		/**
@@ -360,6 +726,14 @@ public final class GraphLayout {
 			
 			public final Stream<Edge> streamOutgoingEdges() {
 				return this.outgoingEdges.stream();
+			}
+			
+			public final void forEachIncoming(final Consumer<Edge> action) {
+				this.incomingEdges.forEach(action);
+			}
+			
+			public final void forEachOutgoing(final Consumer<Edge> action) {
+				this.outgoingEdges.forEach(action);
 			}
 			
 			public final int countIncomingEdges() {
