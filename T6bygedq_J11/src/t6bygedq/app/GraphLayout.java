@@ -14,10 +14,12 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.Set;
+import java.util.Stack;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
@@ -28,6 +30,7 @@ import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
+import javax.xml.namespace.NamespaceContext;
 import javax.xml.stream.FactoryConfigurationError;
 import javax.xml.stream.XMLOutputFactory;
 import javax.xml.stream.XMLStreamException;
@@ -51,8 +54,8 @@ public final class GraphLayout {
 		{
 			Log.begin(1, "Creating graph");
 			
-			final var nbNodes = 200;
-			final var nbEdges = nbNodes * nbNodes * 1 / 32;
+			final var nbNodes = 40;
+			final var nbEdges = nbNodes * nbNodes * 128 / 2048;
 			final var rand = new Random(nbNodes);
 			
 			IntStream.range(0, nbNodes).forEach(__ -> g.addNode());
@@ -225,8 +228,8 @@ public final class GraphLayout {
 					
 					edge.props.put(K_GRID_PATH, path);
 					
-					final var segments = new ArrayList<List<Point2D>>();
-					final var walls = new ArrayList<GridWall>();
+					final var segments = new ArrayList<List<Point2D>>(path.size());
+					final var walls = new ArrayList<GridWall>(path.size());
 					
 					for (var i = 0; i + 1 < path.size(); i += 1) {
 						final var segment = Arrays.asList((Point2D) path.get(i).clone(), (Point2D) path.get(i + 1).clone());
@@ -234,7 +237,7 @@ public final class GraphLayout {
 						final var wall = gridWalls.computeIfAbsent(Set.of(path.get(i), path.get(i + 1)), GridWall::new);
 						walls.add(wall);
 						
-						wall.edges.add(edge);
+						wall.add(edge, segment);
 					}
 					
 					edge.props.put(K_GRID_SEGMENTS, segments);
@@ -248,10 +251,11 @@ public final class GraphLayout {
 					final List<GridWall> walls = Helpers.cast(edge.props.get(K_GRID_WALLS));
 					
 					for (var i = 0; i < segments.size(); i += 1) {
-						final var offset = walls.get(i).getSegmentOffset(edge);
+						final var segment = segments.get(i);
+						final var offset = walls.get(i).getSegmentOffset(edge, segment);
 						
 //						Log.out(1, segments.get(i), offset);
-						segments.get(i).forEach(p -> {
+						segment.forEach(p -> {
 							p.setLocation(p.getX() + offset.getX(), p.getY() + offset.getY());
 						});
 //						Log.out(1, segments.get(i));
@@ -265,40 +269,386 @@ public final class GraphLayout {
 	}
 	
 	/**
+	 * @author 2oLDNncs 20250413
+	 */
+	public static final class MyXmlStreamWriter implements XMLStreamWriter {
+		
+		private final PrintStream svgOut;
+		
+		private final XMLStreamWriter delegate;
+		
+		public MyXmlStreamWriter(final PrintStream svgOut) throws XMLStreamException, FactoryConfigurationError {
+			this.svgOut = svgOut;
+			this.delegate = XMLOutputFactory.newFactory().createXMLStreamWriter(this.svgOut);
+		}
+		
+		@Override
+		public final void writeStartElement(final String prefix, final String localName, final String namespaceURI) throws XMLStreamException {
+			tic();
+			this.delegate.writeStartElement(prefix, localName, namespaceURI);
+			toc("writeStartElement-1");
+		}
+
+		@Override
+		public final void writeStartElement(final String namespaceURI, final String localName) throws XMLStreamException {
+			tic();
+			this.delegate.writeStartElement(namespaceURI, localName);
+			toc("writeStartElement-2");
+		}
+
+		@Override
+		public final void writeStartElement(final String localName) throws XMLStreamException {
+			tic();
+			this.delegate.writeStartElement(localName);
+			toc("writeStartElement-3");
+		}
+
+		@Override
+		public final void writeStartDocument(final String encoding, final String version) throws XMLStreamException {
+			tic();
+			this.delegate.writeStartDocument(version);
+			toc("writeStartDocument-1");
+		}
+
+		@Override
+		public final void writeStartDocument(final String version) throws XMLStreamException {
+			tic();
+			this.delegate.writeStartDocument(version);
+			toc("writeStartDocument-2");
+		}
+
+		@Override
+		public final void writeStartDocument() throws XMLStreamException {
+			tic();
+			this.delegate.writeStartDocument();
+			toc("writeStartDocument-3");
+		}
+
+		@Override
+		public void writeProcessingInstruction(String target, String data) throws XMLStreamException {
+			Log.out(1, "TODO");
+			// TODO Auto-generated method stub
+			
+		}
+
+		@Override
+		public void writeProcessingInstruction(String target) throws XMLStreamException {
+			Log.out(1, "TODO");
+			// TODO Auto-generated method stub
+			
+		}
+
+		@Override
+		public void writeNamespace(String prefix, String namespaceURI) throws XMLStreamException {
+			Log.out(1, "TODO");
+			// TODO Auto-generated method stub
+			
+		}
+
+		@Override
+		public void writeEntityRef(String name) throws XMLStreamException {
+			Log.out(1, "TODO");
+			// TODO Auto-generated method stub
+			
+		}
+
+		@Override
+		public final void writeEndElement() throws XMLStreamException {
+			tic();
+			this.delegate.writeEndElement();
+			toc("writeEndElement");
+		}
+
+		@Override
+		public final void writeEndDocument() throws XMLStreamException {
+			tic();
+			this.delegate.writeEndDocument();
+			toc("writeEndDocument");
+		}
+
+		@Override
+		public void writeEmptyElement(String prefix, String localName, String namespaceURI) throws XMLStreamException {
+			Log.out(1, "TODO");
+			// TODO Auto-generated method stub
+			
+		}
+
+		@Override
+		public void writeEmptyElement(String namespaceURI, String localName) throws XMLStreamException {
+			Log.out(1, "TODO");
+			// TODO Auto-generated method stub
+			
+		}
+
+		@Override
+		public void writeEmptyElement(String localName) throws XMLStreamException {
+			Log.out(1, "TODO");
+			// TODO Auto-generated method stub
+			
+		}
+
+		@Override
+		public void writeDefaultNamespace(String namespaceURI) throws XMLStreamException {
+			Log.out(1, "TODO");
+			// TODO Auto-generated method stub
+			
+		}
+
+		@Override
+		public void writeDTD(String dtd) throws XMLStreamException {
+			Log.out(1, "TODO");
+			// TODO Auto-generated method stub
+			
+		}
+
+		@Override
+		public void writeComment(String data) throws XMLStreamException {
+			Log.out(1, "TODO");
+			// TODO Auto-generated method stub
+			
+		}
+
+		@Override
+		public void writeCharacters(char[] text, int start, int len) throws XMLStreamException {
+			Log.out(1, "TODO");
+			// TODO Auto-generated method stub
+			
+		}
+
+		@Override
+		public final void writeCharacters(final String text) throws XMLStreamException {
+			tic();
+			this.delegate.writeCharacters(text);
+			toc("writeCharacters");
+		}
+
+		@Override
+		public void writeCData(String data) throws XMLStreamException {
+			Log.out(1, "TODO");
+			// TODO Auto-generated method stub
+			
+		}
+
+		@Override
+		public final void writeAttribute(final String prefix, final String namespaceURI, final String localName, final String value)
+				throws XMLStreamException {
+			tic();
+			this.delegate.writeAttribute(prefix, namespaceURI, localName, value);
+			toc("writeAttribute-1");
+		}
+
+		@Override
+		public final void writeAttribute(final String namespaceURI, final String localName, final String value) throws XMLStreamException {
+			tic();
+			this.delegate.writeAttribute(namespaceURI, localName, value);
+			toc("writeAttribute-2");
+		}
+
+		@Override
+		public final void writeAttribute(final String localName, final String value) throws XMLStreamException {
+			tic();
+//			delegate is way too slow for this method (about 700 000 times slower! WTF)
+//			this.delegate.writeAttribute(localName, value);
+			this.svgOut.print(String.format(" %s=\"%s\"", localName, escape(value)));
+			toc("writeAttribute-3");
+		}
+		
+		@Override
+		public void setPrefix(String prefix, String uri) throws XMLStreamException {
+			Log.out(1, "TODO");
+			// TODO Auto-generated method stub
+			
+		}
+
+		@Override
+		public void setNamespaceContext(NamespaceContext context) throws XMLStreamException {
+			Log.out(1, "TODO");
+			// TODO Auto-generated method stub
+			
+		}
+
+		@Override
+		public void setDefaultNamespace(String uri) throws XMLStreamException {
+			Log.out(1, "TODO");
+			// TODO Auto-generated method stub
+			
+		}
+
+		@Override
+		public Object getProperty(String name) throws IllegalArgumentException {
+			Log.out(1, "TODO");
+			// TODO Auto-generated method stub
+			return null;
+		}
+
+		@Override
+		public String getPrefix(String uri) throws XMLStreamException {
+			Log.out(1, "TODO");
+			// TODO Auto-generated method stub
+			return null;
+		}
+
+		@Override
+		public NamespaceContext getNamespaceContext() {
+			Log.out(1, "TODO");
+			// TODO Auto-generated method stub
+			return null;
+		}
+
+		@Override
+		public void flush() throws XMLStreamException {
+			Log.out(1, "TODO");
+			// TODO Auto-generated method stub
+			
+		}
+
+		@Override
+		public void close() throws XMLStreamException {
+			Log.out(1, "TODO");
+			// TODO Auto-generated method stub
+			
+		}
+		
+		public static final String escape(final String string) {
+			final var result = new StringBuilder();
+			
+			for (var i = 0; i < string.length(); i += 1) {
+				final var c = string.charAt(i);
+				
+				switch (c) {
+				case '"':
+					result.append("&quot;");
+					break;
+				case '&':
+					result.append("&amp;");
+					break;
+				case '<':
+					result.append("&lt;");
+					break;
+				case '>':
+					result.append("&gt;");
+					break;
+				default:
+					result.append(c);
+					break;
+				}
+			}
+			
+			return result.toString();
+		}
+		
+	}
+
+	/**
 	 * @author 2oLDNncs 20250412
 	 */
 	public static final class GridWall {
 		
-		private final Collection<Point2D> key;
+		private final List<Point2D> keyPoints;
 		
-		private final Point2D direction = new Point2D.Double(1.0, 0.0);
+		private final Point2D keyDir = new Point2D.Double(0.0, 1.0);
+		private final Point2D wallDir = new Point2D.Double(1.0, 0.0);
 		
 		private final List<Graph.Edge> edges = new ArrayList<>();
 		
+		private final Map<Graph.Node, List<Graph.Edge>> groupBySrc1 = new LinkedHashMap<>();
+		private final Map<Graph.Node, List<Graph.Edge>> groupByDst1 = new LinkedHashMap<>();
+		private final Map<Graph.Node, List<Graph.Edge>> groupBySrc2 = new LinkedHashMap<>();
+		private final Map<Graph.Node, List<Graph.Edge>> groupByDst2 = new LinkedHashMap<>();
+		
 		public GridWall(final Collection<Point2D> key) {
-			this.key = key;
-			final var keyPoints = key.toArray(Point2D[]::new);
+			this.keyPoints = new ArrayList<>(key);
 			
-			if (keyPoints[0].getX() != keyPoints[1].getX()) {
-				this.direction.setLocation(0.0, 1.0);
+			if (this.keyPoints.get(0).getX() != this.keyPoints.get(1).getX()) {
+				this.keyDir.setLocation(1.0, 0.0);
+				this.wallDir.setLocation(0.0, 1.0);
 			}
 			
-			Log.out(0, key, this.direction);
+			Log.out(4, key, this.wallDir);
 		}
 		
-		public final Point2D getSegmentOffset(final Graph.Edge edge) {
-			final var i = this.edges.indexOf(edge);
+		public final void add(final Graph.Edge edge, final List<Point2D> segment) {
+			this.edges.add(edge);
+			
+			final var dot = this.computeSegmentDot(segment);
+			
+			if (dot > 0.0) {
+				computeIfAbsent(this.groupBySrc1, edge.getStartNode()).add(edge);
+				computeIfAbsent(this.groupByDst1, edge.getEndNode()).add(edge);
+			} else {
+				computeIfAbsent(this.groupBySrc2, edge.getStartNode()).add(edge);
+				computeIfAbsent(this.groupByDst2, edge.getEndNode()).add(edge);
+			}
+		}
+		
+		private final double computeSegmentDot(final List<Point2D> segment) {
+			final var segmentDir = new Point2D.Double(
+					segment.get(1).getX() - segment.get(0).getX(),
+					segment.get(1).getY() - segment.get(0).getY());
+			
+			return this.keyDir.getX() * segmentDir.getX() + this.keyDir.getY() * segmentDir.getY();
+		}
+		
+		public final Point2D getSegmentOffset(final Graph.Edge edge, final List<Point2D> segment) {
+			var i = this.edges.indexOf(edge);
+			var n = this.edges.size();
+			
+			final var ns1 = this.groupBySrc1.size();
+			final var nd1 = this.groupByDst1.size();
+			final var ns2 = this.groupBySrc2.size();
+			final var nd2 = this.groupByDst2.size();
+			final var dot = this.computeSegmentDot(segment);
+			
+			if (ns1 + ns2 < n) {
+				i = new ArrayList<>(this.groupBySrc1.keySet()).indexOf(edge.getStartNode());
+				
+				if (i < 0) {
+					i = ns1 + new ArrayList<>(this.groupBySrc2.keySet()).indexOf(edge.getStartNode());
+				}
+				
+				n = ns1 + ns2;
+			}
+			
+			if (ns1 + nd2 < n) {
+				i = new ArrayList<>(this.groupBySrc1.keySet()).indexOf(edge.getStartNode());
+				
+				if (i < 0) {
+					i = ns1 + new ArrayList<>(this.groupByDst2.keySet()).indexOf(edge.getEndNode());
+				}
+				
+				n = ns1 + nd2;
+			}
+			
+			if (nd1 + ns2 < n) {
+				i = new ArrayList<>(this.groupByDst1.keySet()).indexOf(edge.getEndNode());
+				
+				if (i < 0) {
+					i = nd1 + new ArrayList<>(this.groupBySrc2.keySet()).indexOf(edge.getStartNode());
+				}
+				
+				n = nd1 + ns2;
+			}
+			
+			if (nd1 + nd2 < n) {
+				i = new ArrayList<>(this.groupByDst1.keySet()).indexOf(edge.getEndNode());
+				
+				if (i < 0) {
+					i = nd1 + new ArrayList<>(this.groupByDst2.keySet()).indexOf(edge.getEndNode());
+				}
+				
+				n = nd1 + nd2;
+			}
 			
 			if (i < 0) {
 				throw new IllegalStateException();
 			}
 			
-			final var t = (i + 1.0) / (this.edges.size() + 1.0);
+			final var t = (i + 1.0) / (n + 1.0);
 			final var scale = 0.5;
 			
 			return new Point2D.Double(
-					lerp(-this.direction.getX() * scale / 2.0, this.direction.getX() * scale / 2.0, t),
-					lerp(-this.direction.getY() * scale / 2.0, this.direction.getY() * scale / 2.0, t));
+					lerp(-this.wallDir.getX() * scale / 2.0, this.wallDir.getX() * scale / 2.0, t),
+					lerp(-this.wallDir.getY() * scale / 2.0, this.wallDir.getY() * scale / 2.0, t));
 		}
 		
 	}
@@ -308,7 +658,7 @@ public final class GraphLayout {
 		Log.beginf(1, "Writing svg %s", filePath);
 		
 		try (final var svgOut = new PrintStream(filePath)) {
-			final var svg = XMLOutputFactory.newFactory().createXMLStreamWriter(svgOut);
+			final var svg = new MyXmlStreamWriter(svgOut);
 			final var cellWidth = 40;
 			final var cellHeight = 20;
 			final var gridOffsetX = cellWidth / 2;
@@ -333,6 +683,9 @@ public final class GraphLayout {
 					svg.writeAttribute("xmlns:xlink", "http://www.w3.org/1999/xlink");
 					svg.writeAttribute("viewBox", String.format("%s %s %s %s",
 							viewBox.x, viewBox.y, viewBox.width, viewBox.height));
+					
+					
+					svg.writeAttribute("test", "<\"&>");
 					
 					xmlElement(svg, "defs", () -> {
 						xmlElement(svg, "marker", () -> {
@@ -362,6 +715,15 @@ public final class GraphLayout {
 							svg.writeAttribute("rx", "" + nodeWidth / 2);
 							svg.writeAttribute("ry", "" + nodeHeight / 2);
 							svg.writeAttribute("style", "");
+						});
+						
+						xmlElement(svg, "text", () -> {
+							svg.writeAttribute("text-anchor", "middle");
+							svg.writeAttribute("dominant-baseline", "central");
+							svg.writeAttribute("font-size", "" + cellHeight * 6.0 / 20.0);
+							svg.writeAttribute("x", Integer.toString(nodeX));
+							svg.writeAttribute("y", Integer.toString(nodeY));
+							svg.writeCharacters(node.props.getOrDefault("Label", "").toString());
 						});
 						
 						final var a1 = getOutline(node, nodeWidth, nodeHeight);
@@ -513,7 +875,9 @@ public final class GraphLayout {
 		
 		Log.done();
 		
-		Log.out(1, "times:", times);
+		times.forEach((k, v) -> {
+			Log.outf(1, " time(%s)=%s", k, v);
+		});
 	}
 	
 	public static final double lerp(final double a, final double b, final double t) {
@@ -564,15 +928,82 @@ public final class GraphLayout {
 		});
 	}
 	
-	private static final Map<String, AtomicLong> times = new HashMap<>();
+	/**
+	 * @author 2oLDNncs 20250413
+	 */
+	public static final class Stats {
+		
+		private long count;
+		
+		private double sum;
+		
+		private double min;
+		
+		private double max;
+		
+		public final long getCount() {
+			return this.count;
+		}
+		
+		public final double getSum() {
+			return this.sum;
+		}
+		
+		public final double getMin() {
+			return this.min;
+		}
+		
+		public final double getMax() {
+			return this.max;
+		}
+		
+		public final double getAverage() {
+			return this.getSum() / this.getCount();
+		}
+		
+		public final void addValue(final double value) {
+			this.addValue(value, 1L);
+		}
+		
+		public final void addValue(final double value, final long count) {
+			if (value < this.min) {
+				this.min = value;
+			}
+			
+			if (this.max < value) {
+				this.max = value;
+			}
+			
+			this.sum += count * value;
+			this.count += count;
+		}
+		
+		@Override
+		public final String toString() {
+			return String.format("{min:%s max:%s sum:%s nb:%s avg:%s}",
+					this.getMin(), this.getMax(), this.getSum(), this.getCount(), this.getAverage());
+		}
+		
+	}
+	
+	private static final Stack<Long> tics = new Stack<>();
+	private static final Map<String, Stats> times = new HashMap<>();
+	
+	public static final void tic() {
+		tics.push(System.currentTimeMillis());
+	}
+	
+	public static final void toc(final String key) {
+		times.computeIfAbsent(key, __ -> new Stats()).addValue(System.currentTimeMillis() - tics.pop());
+	}
 	
 	public static final void xmlElement(final XMLStreamWriter writer, final String localName,
 			final ElementBuilder builder) throws XMLStreamException {
-		final var t0 = System.currentTimeMillis();
+		tic();
 		writer.writeStartElement(localName);
 		builder.build();
 		writer.writeEndElement();;
-		times.computeIfAbsent(localName, __ -> new AtomicLong()).addAndGet(System.currentTimeMillis() - t0);
+		toc(localName);
 	}
 	
 	/**
@@ -651,6 +1082,8 @@ public final class GraphLayout {
 		
 		public final Node addNode() {
 			final var result = new Node(this.nodes.size());
+			
+			result.props.put("Label", "" + this.nodes.size());
 			
 			this.nodes.add(result);
 			
