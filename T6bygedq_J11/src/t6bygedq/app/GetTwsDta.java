@@ -215,7 +215,8 @@ public final class GetTwsDta {
 		
 		protected WorkbookUpdater(final File workbookFile, final String sheetName) throws InvalidFormatException, IOException {
 			super(REMOTE_COL_DELIMITER, REMOTE_ROW_DELIMITER);
-			this.wu = new XSSFWorkbookUpdater(workbookFile, sheetName);
+			this.wu = new XSSFWorkbookUpdater(workbookFile);
+			this.wu.setTargetSheet(sheetName);
 		}
 		
 		@Override

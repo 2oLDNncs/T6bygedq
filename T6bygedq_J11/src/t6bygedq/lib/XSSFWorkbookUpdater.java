@@ -28,7 +28,7 @@ public final class XSSFWorkbookUpdater implements Closeable {
 	
 	private final XSSFWorkbook workbook;
 	
-	private final XSSFSheet sheet;
+	private XSSFSheet sheet;
 	
 	private String[] updateKey;
 	
@@ -38,18 +38,9 @@ public final class XSSFWorkbookUpdater implements Closeable {
 	
 	private final Queue<Integer> availableRowNums = new PriorityQueue<>();
 	
-	public XSSFWorkbookUpdater(final File workbookFile, final String sheetName) throws InvalidFormatException, IOException {
+	public XSSFWorkbookUpdater(final File workbookFile) throws InvalidFormatException, IOException {
 		this.workbookFile = workbookFile;
 		this.workbook = openOrCreate(workbookFile);
-		
-		var sheet = this.workbook.getSheet(sheetName);
-		
-		if (null == sheet) {
-			sheet = this.workbook.createSheet(sheetName);
-			System.out.println(Helpers.dformat("%s", sheet));
-		}
-		
-		this.sheet = sheet;
 	}
 	
 	public final String[] getUpdateKey() {
@@ -58,6 +49,15 @@ public final class XSSFWorkbookUpdater implements Closeable {
 	
 	public final void setUpdateKey(final String... updateKey) {
 		this.updateKey = updateKey;
+	}
+	
+	public final void setTargetSheet(final String sheetName) {
+		this.sheet = this.workbook.getSheet(sheetName);
+		
+		if (null == this.sheet) {
+			this.sheet = this.workbook.createSheet(sheetName);
+			System.out.println(Helpers.dformat("%s", this.sheet));
+		}
 	}
 	
 	public final String getTimestamp() {
