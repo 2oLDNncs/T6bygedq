@@ -15,10 +15,10 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Random;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
@@ -117,7 +117,7 @@ public final class GraphLayout {
 		
 		if (Log.isEnabled(4)) {
 			g.forEach(node -> {
-				Log.outf(0, "%s %s", node.getIndex(), node.props);
+				Log.outf(0, "%s %s", node.getIndex(), node.getProps());
 			});
 		}
 		
@@ -131,7 +131,7 @@ public final class GraphLayout {
 			final var gridBounds = new Rectangle();
 			
 			g.forEach(node -> {
-				gridBounds.add((int) node.props.get(K_COL) + 1, (int) node.props.get(K_ROW) + 1);
+				gridBounds.add((int) node.getProps().get(K_COL) + 1, (int) node.getProps().get(K_ROW) + 1);
 			});
 			
 			Log.out(1, gridBounds);
@@ -140,8 +140,8 @@ public final class GraphLayout {
 			final var count = new AtomicLong();
 			
 			g.forEach(srcNode -> {
-				final var srcRow = (int) srcNode.props.get(K_ROW);
-				final var srcCol = (int) srcNode.props.get(K_COL);
+				final var srcRow = (int) srcNode.getProps().get(K_ROW);
+				final var srcCol = (int) srcNode.getProps().get(K_COL);
 				
 				srcNode.forEachOutgoing(edge -> {
 					final var dstNode = edge.getEndNode();
@@ -173,8 +173,8 @@ public final class GraphLayout {
 					
 					addToPath.accept(new Point2D.Double(srcCol, srcRow));
 					
-					final var dstRow = (int) dstNode.props.get(K_ROW);
-					final var dstCol = (int) dstNode.props.get(K_COL);
+					final var dstRow = (int) dstNode.getProps().get(K_ROW);
+					final var dstCol = (int) dstNode.getProps().get(K_COL);
 					
 					if (dstRow < srcRow) { // North
 						if (dstCol < srcCol) { // West
@@ -239,7 +239,7 @@ public final class GraphLayout {
 							addToPath.accept(new Point2D.Double(dstCol - 0.5, srcRow + 0.5));
 							addToPath.accept(new Point2D.Double(dstCol - 0.5, dstRow - 0.5));
 							addToPath.accept(new Point2D.Double(dstCol, dstRow - 0.5));
-							edge.props.put(K_DEBUG, count.getAndIncrement() == 0L);
+//							edge.getProps().put(K_DEBUG, count.getAndIncrement() == 0L);
 						}
 					}
 					
@@ -247,7 +247,7 @@ public final class GraphLayout {
 					
 //					Log.outf(1, "%s", path);
 					
-					edge.props.put(K_GRID_PATH, path);
+					edge.getProps().put(K_GRID_PATH, path);
 					
 					final var segments = new ArrayList<List<Point2D>>(path.size());
 					final var walls = new ArrayList<GridWall>(path.size());
@@ -263,15 +263,19 @@ public final class GraphLayout {
 						walls.get(i).add(edge, segments, i);
 					}
 					
-					edge.props.put(K_GRID_SEGMENTS, segments);
-					edge.props.put(K_GRID_WALLS, walls);
+					edge.getProps().put(K_GRID_SEGMENTS, segments);
+					edge.getProps().put(K_GRID_WALLS, walls);
+					
+					if ("29".equals(srcNode.getProps().get(Graph.K_LABEL)) || "29".equals(dstNode.getProps().get(Graph.K_LABEL))) {
+						edge.getProps().put(K_DEBUG, true);
+					}
 				});
 			});
 			
 			g.forEach(node -> {
 				node.forEachOutgoing(edge -> {
-					final List<List<Point2D>> segments = Helpers.cast(edge.props.get(K_GRID_SEGMENTS));
-					final List<GridWall> walls = Helpers.cast(edge.props.get(K_GRID_WALLS));
+					final List<List<Point2D>> segments = Helpers.cast(edge.getProps().get(K_GRID_SEGMENTS));
+					final List<GridWall> walls = Helpers.cast(edge.getProps().get(K_GRID_WALLS));
 					
 					for (var i = 0; i < segments.size(); i += 1) {
 						final var segment = segments.get(i);
@@ -304,10 +308,10 @@ public final class GraphLayout {
 		private final List<Graph.Edge> edges = new ArrayList<>();
 		private final Map<Graph.Edge, Double> edgeRanks = new HashMap<>();
 		
-		private final Map<Graph.Node, List<Graph.Edge>> groupBySrc1 = new LinkedHashMap<>();
-		private final Map<Graph.Node, List<Graph.Edge>> groupByDst1 = new LinkedHashMap<>();
-		private final Map<Graph.Node, List<Graph.Edge>> groupBySrc2 = new LinkedHashMap<>();
-		private final Map<Graph.Node, List<Graph.Edge>> groupByDst2 = new LinkedHashMap<>();
+		private final Map<Graph.Node, Set<Graph.Edge>> groupBySrc1 = new LinkedHashMap<>();
+		private final Map<Graph.Node, Set<Graph.Edge>> groupByDst1 = new LinkedHashMap<>();
+		private final Map<Graph.Node, Set<Graph.Edge>> groupBySrc2 = new LinkedHashMap<>();
+		private final Map<Graph.Node, Set<Graph.Edge>> groupByDst2 = new LinkedHashMap<>();
 		
 		public GridWall(final Collection<Point2D> key) {
 			this.keyPoints = new ArrayList<>(key);
@@ -327,22 +331,27 @@ public final class GraphLayout {
 			
 			final var dot = this.computeSegmentDot(segment);
 			
-			if (dot > 0.0) {
-				computeIfAbsent(this.groupBySrc1, edge.getStartNode()).add(edge);
-				computeIfAbsent(this.groupByDst1, edge.getEndNode()).add(edge);
-			} else {
-				computeIfAbsent(this.groupBySrc2, edge.getStartNode()).add(edge);
-				computeIfAbsent(this.groupByDst2, edge.getEndNode()).add(edge);
+			var rank = Math.signum(this.computeSegmentDot2(segment));
+			
+			if (0.0 != rank) {
+				throw new IllegalStateException();
 			}
 			
-			var rank = Math.signum(dot);
+			if (0.0 < dot) {
+				computeIfAbsentHS(this.groupBySrc1, edge.getStartNode()).add(edge);
+				computeIfAbsentHS(this.groupByDst1, edge.getEndNode()).add(edge);
+				rank += 1.0 / 1024.0;
+			} else {
+				computeIfAbsentHS(this.groupBySrc2, edge.getStartNode()).add(edge);
+				computeIfAbsentHS(this.groupByDst2, edge.getEndNode()).add(edge);
+			}
 			
 			if (0 < segmentIndex) {
-				rank += Math.signum(this.computeSegmentDot(segments.get(segmentIndex - 1)));
+				rank -= Math.signum(this.computeSegmentDot2(segments.get(segmentIndex - 1)));
 			}
 			
 			if (segmentIndex + 1 < segments.size()) {
-				rank += Math.signum(this.computeSegmentDot(segments.get(segmentIndex + 1)));
+				rank += Math.signum(this.computeSegmentDot2(segments.get(segmentIndex + 1)));
 			}
 			
 			this.edgeRanks.put(edge, rank);
@@ -356,85 +365,243 @@ public final class GraphLayout {
 			return this.keyDir.getX() * segmentDir.getX() + this.keyDir.getY() * segmentDir.getY();
 		}
 		
+		private final double computeSegmentDot2(final List<Point2D> segment) {
+			final var segmentDir = new Point2D.Double(
+					segment.get(1).getX() - segment.get(0).getX(),
+					segment.get(1).getY() - segment.get(0).getY());
+			
+			return this.wallDir.getX() * segmentDir.getX() + this.wallDir.getY() * segmentDir.getY();
+		}
+		
 		public final Point2D getSegmentOffset(final Graph.Edge edge, final List<Point2D> segment) {
 			this.edges.sort((e1, e2) -> Double.compare(this.edgeRanks.get(e1), this.edgeRanks.get(e2)));
+			
+//			if (this.groupBySrc2.keySet().stream().anyMatch(n -> "17".equals(n.getProps().get(Graph.K_LABEL)))
+//					&& this.groupByDst2.keySet().stream().anyMatch(n -> "17".equals(n.getProps().get(Graph.K_LABEL)))
+//					&& this.groupBySrc2.keySet().stream().anyMatch(n -> "27".equals(n.getProps().get(Graph.K_LABEL)))) {
+//				Log.out(1, this.edgeRanks);
+//			}
 			
 			var i = this.edges.indexOf(edge);
 			var n = this.edges.size();
 			
-			final var ns1 = this.groupBySrc1.size();
-			final var nd1 = this.groupByDst1.size();
-			final var ns2 = this.groupBySrc2.size();
-			final var nd2 = this.groupByDst2.size();
-			final var dot = this.computeSegmentDot(segment);
+//			final var ns1 = this.groupBySrc1.size();
+//			final var nd1 = this.groupByDst1.size();
+//			final var ns2 = this.groupBySrc2.size();
+//			final var nd2 = this.groupByDst2.size();
+//			final var dot = this.computeSegmentDot(segment);
+//			
+//			final var ns1s2 = ns1 + ns2;
+//			final var ns1d2 = ns1 + nd2;
+//			final var nd1s2 = nd1 + ns2;
+//			final var nd1d2 = nd1 + nd2;
+//			final var nMin = Math.min(n, Math.min(ns1s2, Math.min(ns1d2, Math.min(nd1s2, nd1d2))));
+//			
+//			if (this.groupByDst2.keySet().stream().anyMatch(node -> 29 == node.getIndex())
+//					&& this.groupBySrc2.keySet().stream().anyMatch(node -> 17 == node.getIndex())
+//					&& this.groupBySrc2.keySet().stream().anyMatch(node -> 20 == node.getIndex())) {
+//				Log.out(1, this.edgeRanks);
+//				Log.out(1, n, ns1s2, ns1d2, nd1s2, nd1d2);
+//			}
+//			
+//			if (nMin == ns1s2) {
+//				final var map1 = this.groupBySrc1;
+//				final var map2 = this.groupBySrc2;
+//				final var lst = new ArrayList<>(map1.values());
+//				
+//				lst.addAll(map2.values());
+//				lst.sort((l1, l2) -> {
+//					final var r1 = l1.stream().mapToDouble(this.edgeRanks::get).sum();
+//					final var r2 = l2.stream().mapToDouble(this.edgeRanks::get).sum();
+//					
+//					return Double.compare(r1, r2);
+//				});
+//				
+//				if (this.groupByDst2.keySet().stream().anyMatch(node -> "29".equals(node.getProps().get(Graph.K_LABEL)))
+//						&& this.groupBySrc2.keySet().stream().anyMatch(node -> "17".equals(node.getProps().get(Graph.K_LABEL)))
+//						&& this.groupBySrc2.keySet().stream().anyMatch(node -> "20".equals(node.getProps().get(Graph.K_LABEL)))) {
+//					Log.out(1, lst);
+//					Log.out(1, "", map1);
+//					Log.out(1, "", map2);
+//				}
+//				
+//				i = -1;
+//				
+//				for (var j = 0; j < lst.size(); j += 1) {
+//					if (lst.get(j).contains(edge)) {
+//						i = j;
+//						break;
+//					}
+//				}
+//				
+//				n = ns1 + ns2;
+//			} else if (nMin == ns1d2) {
+//				final var map1 = this.groupBySrc1;
+//				final var map2 = this.groupByDst2;
+//				final var lst = new ArrayList<>(map1.values());
+//				
+//				lst.addAll(map2.values());
+//				lst.sort((l1, l2) -> {
+//					final var r1 = l1.stream().mapToDouble(this.edgeRanks::get).sum();
+//					final var r2 = l2.stream().mapToDouble(this.edgeRanks::get).sum();
+//					
+//					return Double.compare(r1, r2);
+//				});
+//				
+//				i = -1;
+//				
+//				for (var j = 0; j < lst.size(); j += 1) {
+//					if (lst.get(j).contains(edge)) {
+//						i = j;
+//						break;
+//					}
+//				}
+//				
+//				n = ns1 + nd2;
+//			} else if (nMin == nd1s2) {
+//				final var map1 = this.groupByDst1;
+//				final var map2 = this.groupBySrc2;
+//				final var lst = new ArrayList<>(map1.values());
+//				
+//				lst.addAll(map2.values());
+//				lst.sort((l1, l2) -> {
+//					final var r1 = l1.stream().mapToDouble(this.edgeRanks::get).sum();
+//					final var r2 = l2.stream().mapToDouble(this.edgeRanks::get).sum();
+//					
+//					return Double.compare(r1, r2);
+//				});
+//				
+//				i = -1;
+//				
+//				for (var j = 0; j < lst.size(); j += 1) {
+//					if (lst.get(j).contains(edge)) {
+//						i = j;
+//						break;
+//					}
+//				}
+//				
+//				n = nd1 + ns2;
+//			} else if (nMin == nd1d2) {
+//				final var map1 = this.groupByDst1;
+//				final var map2 = this.groupByDst2;
+//				final var lst = new ArrayList<>(map1.values());
+//				
+//				lst.addAll(map2.values());
+//				lst.sort((l1, l2) -> {
+//					final var r1 = l1.stream().mapToDouble(this.edgeRanks::get).sum();
+//					final var r2 = l2.stream().mapToDouble(this.edgeRanks::get).sum();
+//					
+//					return Double.compare(r1, r2);
+//				});
+//				
+//				i = -1;
+//				
+//				for (var j = 0; j < lst.size(); j += 1) {
+//					if (lst.get(j).contains(edge)) {
+//						i = j;
+//						break;
+//					}
+//				}
+//				
+//				n = nd1 + nd2;
+//			}
 			
-			if (ns1 + ns2 < n) {
-				final var map1 = this.groupBySrc1;
-				final var map2 = this.groupBySrc2;
-				final var lst = new ArrayList<>(map1.keySet());
-				
-				lst.addAll(map2.keySet());
-				lst.sort((n1, n2) -> {
-					final var r1 = Objects.requireNonNullElseGet(map1.get(n1), () -> map2.get(n1)).stream().mapToDouble(this.edgeRanks::get).sum();
-					final var r2 = Objects.requireNonNullElseGet(map1.get(n2), () -> map2.get(n2)).stream().mapToDouble(this.edgeRanks::get).sum();
-					
-					return Double.compare(r1, r2);
-				});
-				
-				i = lst.indexOf(edge.getStartNode());
-				n = ns1 + ns2;
+			final var lst_ = new ArrayList<Collection<Graph.Edge>>();
+			final var individuals = new ArrayList<Graph.Edge>();
+			
+			for (final var e : this.edges) {
+				final var ns1_ = this.groupBySrc1.getOrDefault(e.getStartNode(), Collections.emptySet()).size();
+				final var nd1_ = this.groupByDst1.getOrDefault(e.getEndNode(), Collections.emptySet()).size();
+				if (1 < ns1_ && 1 < nd1_ || 1 == ns1_ && 1 == nd1_) {
+					individuals.add(e);
+				} else {
+					final var ns2_ = this.groupBySrc2.getOrDefault(e.getStartNode(), Collections.emptySet()).size();
+					final var nd2_ = this.groupByDst2.getOrDefault(e.getEndNode(), Collections.emptySet()).size();
+					if (1 < ns2_ && 1 < nd2_ || 1 == ns2_ && 1 == nd2_) {
+						individuals.add(e);
+					}
+				}
 			}
 			
-			if (ns1 + nd2 < n) {
-				final var map1 = this.groupBySrc1;
-				final var map2 = this.groupByDst2;
-				final var lst = new ArrayList<>(map1.keySet());
-				
-				lst.addAll(map2.keySet());
-				lst.sort((n1, n2) -> {
-					final var r1 = Objects.requireNonNullElseGet(map1.get(n1), () -> map2.get(n1)).stream().mapToDouble(this.edgeRanks::get).sum();
-					final var r2 = Objects.requireNonNullElseGet(map1.get(n2), () -> map2.get(n2)).stream().mapToDouble(this.edgeRanks::get).sum();
-					
-					return Double.compare(r1, r2);
-				});
-				
-				i = lst.indexOf(edge.getStartNode());
-				n = ns1 + nd2;
+			for (final var group : this.groupBySrc1.values()) {
+				if (1 < group.size()) {
+					final var tmp = new HashSet<>(group);
+					tmp.removeAll(individuals);
+					if (!tmp.isEmpty()) {
+						lst_.add(tmp);
+					}
+				}
 			}
 			
-			if (nd1 + ns2 < n) {
-				final var map1 = this.groupByDst1;
-				final var map2 = this.groupBySrc2;
-				final var lst = new ArrayList<>(map1.keySet());
-				
-				lst.addAll(map2.keySet());
-				lst.sort((n1, n2) -> {
-					final var r1 = Objects.requireNonNullElseGet(map1.get(n1), () -> map2.get(n1)).stream().mapToDouble(this.edgeRanks::get).sum();
-					final var r2 = Objects.requireNonNullElseGet(map1.get(n2), () -> map2.get(n2)).stream().mapToDouble(this.edgeRanks::get).sum();
-					
-					return Double.compare(r1, r2);
-				});
-				
-				i = lst.indexOf(edge.getStartNode());
-				n = nd1 + ns2;
+			for (final var group : this.groupByDst1.values()) {
+				if (1 < group.size()) {
+					final var tmp = new HashSet<>(group);
+					tmp.removeAll(individuals);
+					if (!tmp.isEmpty()) {
+						lst_.add(tmp);
+					}
+				}
 			}
 			
-			if (nd1 + nd2 < n) {
-				final var map1 = this.groupByDst1;
-				final var map2 = this.groupByDst2;
-				final var lst = new ArrayList<>(map1.keySet());
-				
-				lst.addAll(map2.keySet());
-				lst.sort((n1, n2) -> {
-					final var r1 = Objects.requireNonNullElseGet(map1.get(n1), () -> map2.get(n1)).stream().mapToDouble(this.edgeRanks::get).sum();
-					final var r2 = Objects.requireNonNullElseGet(map1.get(n2), () -> map2.get(n2)).stream().mapToDouble(this.edgeRanks::get).sum();
-					
-					return Double.compare(r1, r2);
-				});
-				
-				i = lst.indexOf(edge.getStartNode());
-				n = nd1 + nd2;
+			for (final var group : this.groupBySrc2.values()) {
+				if (1 < group.size()) {
+					final var tmp = new HashSet<>(group);
+					tmp.removeAll(individuals);
+					if (!tmp.isEmpty()) {
+						lst_.add(tmp);
+					}
+				}
 			}
+			
+			for (final var group : this.groupByDst2.values()) {
+				if (1 < group.size()) {
+					final var tmp = new HashSet<>(group);
+					tmp.removeAll(individuals);
+					if (!tmp.isEmpty()) {
+						lst_.add(tmp);
+					}
+				}
+			}
+			
+			for (final var individual : individuals) {
+				lst_.add(Set.of(individual));
+			}
+			
+//			if (this.groupByDst2.keySet().stream().anyMatch(node -> 29 == node.getIndex())
+//					&& this.groupBySrc2.keySet().stream().anyMatch(node -> 17 == node.getIndex())
+//					&& this.groupBySrc2.keySet().stream().anyMatch(node -> 20 == node.getIndex())) {
+//				Log.out(1, lst_);
+//				Log.out(1, individuals);
+//			}
+//			Log.out(1, this.edges);
+//			Log.out(1, this.groupBySrc1);
+//			Log.out(1, this.groupByDst1);
+//			Log.out(1, this.groupBySrc2);
+//			Log.out(1, this.groupByDst2);
+//			Log.out(1, lst_);
+//			Log.out(1, individuals);
+			
+			lst_.sort((l1, l2) -> {
+				final var r1 = l1.stream().mapToDouble(this.edgeRanks::get).sum();
+				final var r2 = l2.stream().mapToDouble(this.edgeRanks::get).sum();
+				
+				return Double.compare(r1, r2);
+			});
+			
+			n = lst_.size();
+			
+			i = -1;
+			
+			for (var j = 0; j < n; j += 1) {
+				if (lst_.get(j).contains(edge)) {
+					i = j;
+					break;
+				}
+			}
+			
+			Log.out(1, this.edgeRanks);
+			Log.out(1, lst_);
+			Log.out(1, "", edge, i);
 			
 			if (i < 0) {
 				throw new IllegalStateException();
@@ -501,8 +668,8 @@ public final class GraphLayout {
 					});
 					
 					for (final var node : g.nodes) {
-						final var nodeX = (int) node.props.get(K_X);
-						final var nodeY = (int) node.props.get(K_Y);
+						final var nodeX = (int) node.getProps().get(K_X);
+						final var nodeY = (int) node.getProps().get(K_Y);
 						
 						xmlElement(svg, "ellipse", () -> {
 							svg.writeAttribute("fill", "none");
@@ -520,14 +687,14 @@ public final class GraphLayout {
 							svg.writeAttribute("font-size", "" + cellHeight * 6.0 / 20.0);
 							svg.writeAttribute("x", Integer.toString(nodeX));
 							svg.writeAttribute("y", Integer.toString(nodeY));
-							svg.writeCharacters(node.props.getOrDefault("Label", "").toString());
+							svg.writeCharacters(node.getProps().getOrDefault("Label", "").toString());
 						});
 						
 						final var a1 = getOutline(node, nodeWidth, nodeHeight);
 						
 						for (final var edge : node.outgoingEdges) {
-							final List<Point2D> gridPath = Helpers.cast(edge.props.get(K_GRID_PATH));
-							final List<List<Point2D>> gridSegments = Helpers.cast(edge.props.get(K_GRID_SEGMENTS));
+							final List<Point2D> gridPath = Helpers.cast(edge.getProps().get(K_GRID_PATH));
+							final List<List<Point2D>> gridSegments = Helpers.cast(edge.getProps().get(K_GRID_SEGMENTS));
 							final var dBuilder = new StringBuilder();
 							
 							final BiConsumer<String, Point2D> appendXY = (t, p) -> {
@@ -556,7 +723,7 @@ public final class GraphLayout {
 										svg.writeAttribute("stroke", "black");
 									}
 									svg.writeAttribute("stroke-width", "0.25");
-									if (Boolean.TRUE.equals(edge.props.get(K_DEBUG)) || true) {
+									if (Boolean.TRUE.equals(edge.getProps().get(K_DEBUG)) || true) {
 										svg.writeAttribute("d", dBuilder.toString());
 									}
 									svg.writeAttribute("marker-end", "url(#head)");
@@ -615,7 +782,7 @@ public final class GraphLayout {
 								xmlElement(svg, "path", () -> {
 									svg.writeAttribute("fill", "none");
 									svg.writeAttribute("stroke", "black");
-									if (edge.props.containsKey(K_DEBUG) || true) {
+									if (edge.getProps().containsKey(K_DEBUG) || true) {
 										svg.writeAttribute("d", dBuilder.toString());
 									}
 									svg.writeAttribute("marker-end", "url(#head)");
@@ -692,15 +859,15 @@ public final class GraphLayout {
 	public static final String K_OUTLINE = "Outline";
 	
 	private static final int getGeomPos(final Graph.Node node, final String geomKey, final String gridKey, final int geomOffset, final int geomSide) {
-		return (int) node.props.computeIfAbsent(geomKey, __ -> {
-			return geomOffset + (int) node.props.get(gridKey) * geomSide;
+		return (int) node.getProps().computeIfAbsent(geomKey, __ -> {
+			return geomOffset + (int) node.getProps().get(gridKey) * geomSide;
 		});
 	}
 	
 	private static final Area getOutline(final Graph.Node node, final int nodeWidth, final int nodeHeight) {
-		return (Area) node.props.computeIfAbsent(K_OUTLINE, __ -> {
-			final var x = (int) node.props.get(K_X);
-			final var y = (int) node.props.get(K_Y);
+		return (Area) node.getProps().computeIfAbsent(K_OUTLINE, __ -> {
+			final var x = (int) node.getProps().get(K_X);
+			final var y = (int) node.getProps().get(K_Y);
 			final var result = new Area(new Ellipse2D.Double(x - nodeWidth / 2, y - nodeHeight / 2, nodeWidth, nodeHeight));
 			
 			result.subtract(new Area(new Ellipse2D.Double(x - nodeWidth / 2 + 0.125, y - nodeHeight / 2 + 0.125, nodeWidth - 0.25, nodeHeight - 0.25)));
@@ -710,11 +877,11 @@ public final class GraphLayout {
 	}
 	
 	private static final Area getOutline(final Graph.Edge edge) {
-		return (Area) edge.props.computeIfAbsent(K_OUTLINE, __ -> {
-			final int nodeX = (int) edge.getStartNode().props.get(K_X);
-			final int nodeY = (int) edge.getStartNode().props.get(K_Y);
-			final int endNodeX = (int) edge.getEndNode().props.get(K_X);
-			final int endNodeY = (int) edge.getEndNode().props.get(K_Y);
+		return (Area) edge.getProps().computeIfAbsent(K_OUTLINE, __ -> {
+			final int nodeX = (int) edge.getStartNode().getProps().get(K_X);
+			final int nodeY = (int) edge.getStartNode().getProps().get(K_Y);
+			final int endNodeX = (int) edge.getEndNode().getProps().get(K_X);
+			final int endNodeY = (int) edge.getEndNode().getProps().get(K_Y);
 			final var result = new Area(new Rectangle2D.Double(nodeX, nodeY,
 					Point2D.distance(nodeX, nodeY, endNodeX, endNodeY),
 					0.25));
@@ -753,6 +920,10 @@ public final class GraphLayout {
 		return map.computeIfAbsent(key, __ -> new ArrayList<>());
 	}
 	
+	public static final <K, E> Set<E> computeIfAbsentHS(final Map<K, Set<E>> map, final K key) {
+		return map.computeIfAbsent(key, __ -> new HashSet<>());
+	}
+	
 	public static final <E> List<E> computeIfAbsent(final List<List<E>> map, final int key) {
 		while (map.size() <= key) {
 			map.add(new ArrayList<>());
@@ -766,8 +937,8 @@ public final class GraphLayout {
 		
 		final Function<Integer, Consumer<Graph.Node>> applyDepth = d -> node -> {
 			final var row = getRow.apply(d);
-			node.props.put(K_ROW, d);
-			node.props.put(K_COL, row.size());
+			node.getProps().put(K_ROW, d);
+			node.getProps().put(K_COL, row.size());
 			row.add(node);
 			todo.add(node);
 		};
@@ -775,18 +946,18 @@ public final class GraphLayout {
 		final var applyDepth0 = applyDepth.apply(0);
 		
 		for (final var node : nodes) {
-			if (!node.props.containsKey(K_ROW)) {
+			if (!node.getProps().containsKey(K_ROW)) {
 				applyDepth0.accept(node);
 			}
 		}
 		
 		while (!todo.isEmpty()) {
 			final var n0 = todo.remove(todo.size() - 1);
-			final var d0 = (int) n0.props.get(K_ROW);
+			final var d0 = (int) n0.getProps().get(K_ROW);
 			
 			n0.streamOutgoingEdges()
 			.map(Graph.Edge::getEndNode)
-			.filter(n -> !n.props.containsKey(K_ROW))
+			.filter(n -> !n.getProps().containsKey(K_ROW))
 			.forEach(applyDepth.apply(d0 + 1));
 		}
 		
@@ -797,7 +968,11 @@ public final class GraphLayout {
 	 */
 	public static abstract class Obj {
 		
-		public final Map<String, Object> props = new HashMap<>();
+		private final Map<String, Object> props = new HashMap<>();
+		
+		public final Map<String, Object> getProps() {
+			return this.props;
+		}
 		
 	}
 	
@@ -811,7 +986,7 @@ public final class GraphLayout {
 		public final Node addNode() {
 			final var result = new Node(this.nodes.size());
 			
-			result.props.put("Label", "" + this.nodes.size());
+			result.getProps().put(K_LABEL, "" + this.nodes.size());
 			
 			this.nodes.add(result);
 			
@@ -833,6 +1008,8 @@ public final class GraphLayout {
 		public final int countEdges() {
 			return this.nodes.stream().mapToInt(Node::countOutgoingEdges).sum();
 		}
+		
+		public static final String K_LABEL = "Label";
 		
 		/**
 		 * @author 2oLDNncs 20250402
@@ -951,7 +1128,8 @@ public final class GraphLayout {
 			
 			@Override
 			public final String toString() {
-				return String.format("%s%s", this.getIndex(), this.props);
+//				return String.format("%s%s", this.getIndex(), this.getProps());
+				return String.format("%s", this.getIndex());
 			}
 			
 			private final void addIncomingEdge(final Edge edge) {
@@ -1037,7 +1215,8 @@ public final class GraphLayout {
 			
 			@Override
 			public final String toString() {
-				return String.format("%s->%s%s", this.getStartNodeIndex(), this.getEndNodeIndex(), this.props);
+//				return String.format("%s->%s%s", this.getStartNodeIndex(), this.getEndNodeIndex(), this.getProps());
+				return String.format("%s->%s", this.getStartNodeIndex(), this.getEndNodeIndex());
 			}
 			
 		}
