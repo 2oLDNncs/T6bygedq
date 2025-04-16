@@ -14,11 +14,13 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Random;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
@@ -125,6 +127,58 @@ public final class GraphLayout {
 			IntStream.range(0, grid.size()).forEach(k -> {
 				Log.outf(0, "%s%s", k, grid.get(k));
 			});
+		}
+		
+		{
+			final var lg = new LayoutGrid();
+			
+			g.forEach(node -> {
+				final var rowIdx = 1 + 2 * (int) node.getProps().get(K_ROW);
+				final var colIdx = 1 + 2 * (int) node.getProps().get(K_COL);
+				
+				lg.cell(rowIdx, colIdx).setNode(node);
+				lg.cell(rowIdx + 1, colIdx + 1); // east and south borders (north and west already taken care of by rowIdx and colIdx)
+			});
+			
+			g.forEach(node -> {
+				lg.forEach(cell -> {
+					cell.setDistance(Integer.MAX_VALUE);
+					cell.setTurns(0);
+				});
+				
+				final var targets = node.streamOutgoingEdges()
+						.map(Graph.Edge::getEndNode)
+						.collect(Collectors.toCollection(HashSet::new));
+				final var rowIdx = 1 + 2 * (int) node.getProps().get(K_ROW);
+				final var colIdx = 1 + 2 * (int) node.getProps().get(K_COL);
+				final var nodeCell = lg.cell(rowIdx, colIdx);
+				
+				nodeCell.setDistance(0);
+				
+				final var todo = new ArrayList<LayoutGrid.Cell>();
+				
+				todo.add(nodeCell);
+				
+				while (!todo.isEmpty() && !targets.isEmpty()) {
+					final var cell = todo.remove(0);
+					final var nextDistance = cell.getDistance() + 1;
+					
+					for (final var side : LayoutGrid.Cell.Side.values()) {
+						final var neighbor = lg.neighbor(cell, side);
+						
+						if (null != neighbor) {
+							if (targets.remove(neighbor.getNode())) {
+								Log.outf(1, "TODO %s -> %s", node.getIndex(), neighbor.getNode().getIndex()); // TODO Build path to target
+								Log.outf(1, "Remaining targets: %s", targets);
+							} else if (null == neighbor.getNode() && nextDistance < neighbor.getDistance()) {
+								neighbor.setDistance(nextDistance);
+								todo.add(neighbor);
+							}
+						}
+					}
+				}
+			});
+			
 		}
 		
 		{
@@ -1222,5 +1276,328 @@ public final class GraphLayout {
 		}
 		
 	}
-
+	
+	/**
+	 * @author 2oLDNncs 20250415
+	 */
+	public static final class LayoutGrid {
+		
+		private final List<List<Cell>> rows = new ArrayList<>();
+		
+		public final int countRows() {
+			return this.rows.size();
+		}
+		
+		public final int countCols() {
+			return this.rows.isEmpty() ? 0 : this.rows.get(0).size();
+		}
+		
+		public final void forEach(final Consumer<Cell> action) {
+			this.rows.stream()
+			.flatMap(Collection::stream)
+			.filter(Objects::nonNull)
+			.forEach(action);
+		}
+		
+		public final Cell cell(final int rowIdx, final int colIdx) {
+			while (this.countRows() <= rowIdx) {
+				this.rows.add(new ArrayList<>(Collections.nCopies(this.countCols(), null)));
+			}
+			
+			if (this.countCols() <= colIdx) {
+				this.rows.forEach(row -> row.addAll(Collections.nCopies(1 + colIdx - row.size(), null)));
+			}
+			
+			var result = this.getRowElement(rowIdx, colIdx);
+			
+			if (null == result) {
+				result = this.setRowElement(rowIdx, colIdx);
+			}
+			
+			return result;
+		}
+		
+		public final Cell neighbor(final Cell cell, final Cell.Side side) {
+			switch (side) {
+			case EAST:
+				if (cell.getColIdx() <= 0) {
+					return null;
+				}
+				
+				return this.cell(cell.getRowIdx(), cell.getColIdx() - 1);
+			case NORTH:
+				if (cell.getRowIdx() <= 0) {
+					return null;
+				}
+				
+				return this.cell(cell.getRowIdx() - 1, cell.getColIdx());
+			case SOUTH:
+				if (this.countRows() <= cell.getRowIdx()) {
+					return null;
+				}
+				
+				return this.cell(cell.getRowIdx() + 1, cell.getColIdx());
+			case WEST:
+				if (this.countCols() <= cell.getColIdx()) {
+					return null;
+				}
+				
+				return this.cell(cell.getRowIdx(), cell.getColIdx() + 1);
+			default:
+				throw new IllegalStateException(String.format("Invalid side %s", side));
+			}
+		}
+		
+		public final Cell findCell(final int rowIdx, final int colIdx) {
+			if (rowIdx < this.countRows() && colIdx < this.countCols()) {
+				return this.getRowElement(rowIdx, colIdx);
+			}
+			
+			return null;
+		}
+		
+		private final Cell getRowElement(final int rowIdx, final int colIdx) {
+			return this.rows.get(rowIdx).get(colIdx);
+		}
+		
+		private final Cell setRowElement(final int rowIdx, final int colIdx) {
+			final var result = new Cell(rowIdx, colIdx);
+			
+			if (0 < rowIdx) {
+				result.setWall(Cell.Side.NORTH, this.getRowElement(rowIdx - 1, colIdx));
+			}
+			
+			final var row = this.rows.get(rowIdx);
+			
+			if (0 < colIdx) {
+				result.setWall(Cell.Side.EAST, row.get(colIdx - 1));
+			}
+			
+			if (colIdx + 1 < row.size()) {
+				result.setWall(Cell.Side.EAST, row.get(colIdx + 1));
+			}
+			
+			if (rowIdx + 1 < this.countRows()) {
+				result.setWall(Cell.Side.SOUTH, this.getRowElement(rowIdx + 1, colIdx));
+			}
+			
+			row.set(colIdx, result);
+			
+			return result;
+		}
+		
+		/**
+		 * @author 2oLDNncs 20250415
+		 */
+		public static final class Cell {
+			
+			private final int rowIdx;
+			
+			private final int colIdx;
+			
+			private final Map<Side, List<Waypoint>> walls = new EnumMap<>(Side.class);
+			
+			private Graph.Node node;
+			
+			private int distance;
+			
+			private int turns;
+			
+			public Cell(final int rowIdx, final int colIdx) {
+				this.rowIdx = rowIdx;
+				this.colIdx = colIdx;
+			}
+			
+			public final int getRowIdx() {
+				return this.rowIdx;
+			}
+			
+			public final int getColIdx() {
+				return this.colIdx;
+			}
+			
+			public final List<Waypoint> getWall(final Side side) {
+				return this.walls.get(side);
+			}
+			
+			public final void setWall(final Side side, final Cell neighbor) {
+				final List<Waypoint> wall;
+				
+				if (null != neighbor) {
+					wall = neighbor.getWall(side.flip());
+				} else {
+					wall = new ArrayList<>();
+				}
+				
+				this.walls.put(side, wall);
+			}
+			
+			public final Graph.Node getNode() {
+				return this.node;
+			}
+			
+			public final void setNode(Graph.Node node) {
+				this.node = node;
+			}
+			
+			public final int getDistance() {
+				return this.distance;
+			}
+			
+			public final void setDistance(final int distance) {
+				this.distance = distance;
+			}
+			
+			public final int getTurns() {
+				return this.turns;
+			}
+			
+			public final void setTurns(final int turns) {
+				this.turns = turns;
+			}
+			
+			/**
+			 * @author 2oLDNncs 20250416
+			 */
+			public static enum Side {
+				
+				NORTH {
+					
+					@Override
+					public final Side flip() {
+						return SOUTH;
+					}
+					
+					@Override
+					public final int getRelation(final Side other) {
+						switch (other) {
+						case EAST:
+							return 1;
+						case SOUTH:
+							return 0;
+						case WEST:
+							return -1;
+						default:
+							throw new IllegalArgumentException(String.format("%s", other));
+						}
+					}
+					
+				}, WEST {
+					
+					@Override
+					public final Side flip() {
+						return EAST;
+					}
+					
+					@Override
+					public final int getRelation(final Side other) {
+						switch (other) {
+						case SOUTH:
+							return 1;
+						case EAST:
+							return 0;
+						case NORTH:
+							return -1;
+						default:
+							throw new IllegalArgumentException(String.format("%s", other));
+						}
+					}
+					
+				}, SOUTH {
+					
+					@Override
+					public final Side flip() {
+						return NORTH;
+					}
+					
+					@Override
+					public final int getRelation(final Side other) {
+						switch (other) {
+						case WEST:
+							return 1;
+						case NORTH:
+							return 0;
+						case EAST:
+							return -1;
+						default:
+							throw new IllegalArgumentException(String.format("%s", other));
+						}
+					}
+					
+				}, EAST {
+					
+					@Override
+					public final Side flip() {
+						return WEST;
+					}
+					
+					@Override
+					public final int getRelation(final Side other) {
+						switch (other) {
+						case NORTH:
+							return 1;
+						case WEST:
+							return 0;
+						case SOUTH:
+							return -1;
+						default:
+							throw new IllegalArgumentException(String.format("%s", other));
+						}
+					}
+					
+				};
+				
+				public abstract Side flip();
+				
+				public abstract int getRelation(Side other);
+				
+			}
+			
+		}
+		
+		/**
+		 * @author 2oLDNncs 20250415
+		 */
+		public static final class Waypoint {
+			
+			private Waypoint previous;
+			
+			private Waypoint next;
+			
+			private final List<Path> paths = new ArrayList<>();
+			
+		}
+		
+		/**
+		 * @author 2oLDNncs 20250416
+		 */
+		public static final class Path {
+			
+			private final Cell ori;
+			
+			private final Cell dst;
+			
+			private final List<Waypoint> waypoints = new ArrayList<>();
+			
+			public Path(final Cell ori, final Cell dst) {
+				this.ori = ori;
+				this.dst = dst;
+			}
+			
+			public final Cell getOri() {
+				return this.ori;
+			}
+			
+			public final Cell getDst() {
+				return this.dst;
+			}
+			
+			public final List<Waypoint> getWaypoints() {
+				return this.waypoints;
+			}
+			
+		}
+		
+	}
+	
 }
