@@ -89,11 +89,18 @@ public final class GraphLayout {
 			Log.beginf(1, "Loading %s", ap.getPath(ARG_IN));
 			
 			final var nodeMap = new HashMap<String, Graph.Node>();
+			final Function<? super String, ? extends Graph.Node> makeNode = lbl -> {
+				final var result = g.addNode();
+				
+				result.getProps().put(Graph.K_LABEL, lbl);
+				
+				return result;
+			};
 			
 			Files.lines(ap.getPath(ARG_IN)).forEach(line -> {
 				final var elements = line.split("\t");
-				final var start = nodeMap.computeIfAbsent(elements[0], __ -> g.addNode());
-				final var end = nodeMap.computeIfAbsent(elements[1], __ -> g.addNode());
+				final var start = nodeMap.computeIfAbsent(elements[0], makeNode);
+				final var end = nodeMap.computeIfAbsent(elements[1], makeNode);
 				start.edgeTo(end);
 			});
 			
@@ -158,6 +165,17 @@ public final class GraphLayout {
 				final var nodeCell = lg.cell(rowIdx, colIdx);
 				
 				nodeCell.setDistance(0);
+				
+				if (targets.remove(node)) {
+					final var path = new LayoutGrid.Path(nodeCell, nodeCell);
+					var pathCell = nodeCell;
+					
+					for (final var pathSide : Helpers.array(LayoutGrid.Cell.Side.NORTH,
+							LayoutGrid.Cell.Side.EAST, LayoutGrid.Cell.Side.SOUTH, LayoutGrid.Cell.Side.WEST)) {
+						path.prependWaypoint(pathCell, pathSide);
+						pathCell = lg.neighbor(pathCell, pathSide);
+					}
+				}
 				
 				final var todo = new ArrayList<LayoutGrid.Cell>();
 				
@@ -575,14 +593,14 @@ public final class GraphLayout {
 						xmlElement(svg, "marker", () -> {
 							svg.writeAttribute("id", "head");
 							svg.writeAttribute("orient", "auto");
-							svg.writeAttribute("markerWidth", "6");
+							svg.writeAttribute("markerWidth", "12");
 							svg.writeAttribute("markerHeight", "8");
-							svg.writeAttribute("refX", "3.2");
+							svg.writeAttribute("refX", "12");
 							svg.writeAttribute("refY", "4");
 							
 							xmlElement(svg, "path", () -> {
-								svg.writeAttribute("d", "M0,0 V8 L4,4 Z");
-								svg.writeAttribute("fill", "black");
+								svg.writeAttribute("d", "M0,0 V8 L12,4 Z");
+								svg.writeAttribute("fill", "context-stroke");
 							});
 						});
 					});
@@ -653,7 +671,7 @@ public final class GraphLayout {
 								
 								xmlElement(svg, "path", () -> {
 									svg.writeAttribute("fill", "none");
-									svg.writeAttribute("stroke", "black");
+									svg.writeAttribute("stroke", path.getOri() == path.getDst() ? "red" : "black");
 									svg.writeAttribute("stroke-width", "0.25");
 									svg.writeAttribute("d", dBuilder.toString());
 									svg.writeAttribute("marker-end", "url(#head)");
