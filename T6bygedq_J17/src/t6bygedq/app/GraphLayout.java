@@ -23,6 +23,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Random;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
@@ -61,7 +62,7 @@ public final class GraphLayout {
 	public static final void main(final String[] args) throws IOException, XMLStreamException {
 		final var g = new Graph();
 		
-		if (false) {
+		if (true) {
 			Log.begin(1, "Creating graph");
 			
 			final var nbNodes = 40;
@@ -1414,6 +1415,9 @@ public final class GraphLayout {
 			
 			private int turns;
 			
+			private final Map<Cell, Waypoint> groupByOri = new HashMap<>();
+			private final Map<Side, Map<Cell, Waypoint>> groupByDst = new HashMap<>();
+			
 			public Cell(final int rowIdx, final int colIdx) {
 				this.rowIdx = rowIdx;
 				this.colIdx = colIdx;
@@ -1453,10 +1457,53 @@ public final class GraphLayout {
 						.filter(path -> this == path.getOri());
 			}
 			
+			public static final <K, V> boolean removeValue(final Map<K, V> map, final V value) {
+				var key = findKey(map, value);
+				
+				if (key.isEmpty()) {
+					return false;
+				}
+				
+				while (key.isPresent()) {
+					map.remove(key.get());
+					key = findKey(map, value);
+				}
+				
+				return true;
+			}
+			
+			public static final <K, V> Optional<K> findKey(final Map<K, V> map, final V value) {
+				return map.entrySet().stream()
+						.filter(e -> Objects.equals(e.getValue(), value))
+						.map(Map.Entry::getKey)
+						.findAny();
+			}
+			
 			public final Waypoint newWaypoint(final Side side, final Path path) {
-				final var result = new LayoutGrid.Waypoint(this, side);
+				final var sameOri = this.groupByOri;
+				final var sameDst = this.groupByDst.computeIfAbsent(side, __ -> new HashMap<>());
+				var result = sameDst.get(path.getDst());
+				
+				if (null != result) {
+					removeValue(sameOri, result);
+					
+					return result;
+				}
+				
+				result = sameOri.get(path.getOri());
+				
+				if (null != result) {
+					removeValue(sameDst, result);
+					
+					return result;
+				}
+				
+				result = new LayoutGrid.Waypoint(this, side);
 				
 				this.getWall(side).add(result);
+				
+				sameDst.put(path.getDst(), result);
+				sameOri.put(path.getOri(), result);
 				
 				return result;
 			}
@@ -1748,7 +1795,8 @@ public final class GraphLayout {
 			
 			@Override
 			public final String toString() {
-				return String.format("%s -> %s %s", this.getOri(), this.getDst(), this.getWaypoints());
+//				return String.format("%s -> %s %s", this.getOri(), this.getDst(), this.getWaypoints());
+				return String.format("%s -> %s", this.getOri(), this.getDst());
 			}
 			
 		}
