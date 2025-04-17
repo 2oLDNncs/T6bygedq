@@ -8,6 +8,7 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 import java.util.Arrays;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Objects;
 import java.util.stream.Stream;
@@ -17,6 +18,17 @@ import java.util.stream.StreamSupport;
  * @author 2oLDNncs 20241228
  */
 public final class Helpers {
+	
+	public static final <E> Iterable<E> in(final Stream<E> stream) {
+		return new Iterable<>() {
+			
+			@Override
+			public final Iterator<E> iterator() {
+				return stream.iterator();
+			}
+			
+		};
+	}
 	
 	public static final <E> E[] array(@SuppressWarnings("unchecked") final E... elements) {
 		return elements;
@@ -43,6 +55,14 @@ public final class Helpers {
 				args
 				.map(Objects::toString)
 				.toArray(String[]::new));
+	}
+	
+	public static final boolean inRange(final int end, final int index) {
+		return inRange(0, end, index);
+	}
+	
+	public static final boolean inRange(final int start, final int end, final int index) {
+		return start <= index && index < end;
 	}
 	
 	@SuppressWarnings("unchecked")

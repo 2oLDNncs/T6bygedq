@@ -1,5 +1,7 @@
 package t6bygedq.app;
 
+import static t6bygedq.lib.Helpers.in;
+
 import java.awt.Rectangle;
 import java.awt.geom.AffineTransform;
 import java.awt.geom.Area;
@@ -37,6 +39,8 @@ import javax.xml.stream.FactoryConfigurationError;
 import javax.xml.stream.XMLStreamException;
 import javax.xml.stream.XMLStreamWriter;
 
+import t6bygedq.app.GraphLayout.LayoutGrid.Cell;
+import t6bygedq.app.GraphLayout.LayoutGrid.Cell.Side;
 import t6bygedq.lib.ArgsParser;
 import t6bygedq.lib.Chrono;
 import t6bygedq.lib.Helpers;
@@ -96,12 +100,13 @@ public final class GraphLayout {
 			Log.done();
 		}
 		
-		applyHierarchicalGridLayout(g);
+		final var lg = applyHierarchicalGridLayout(g);
 		
-		writeSvg(g, "data/graph.svg");
+//		writeSvg(g, "data/graph.svg");
+		writeSvg(lg, "data/graph.svg");
 	}
 	
-	public static void applyHierarchicalGridLayout(final Graph g) {
+	public static final LayoutGrid applyHierarchicalGridLayout(final Graph g) {
 		Log.begin(1, "Appying Hierarchical Grid Layout");
 		Log.outf(2, "Nodes: %s Edges: %s", g.countNodes(), g.countEdges());
 		
@@ -129,9 +134,9 @@ public final class GraphLayout {
 			});
 		}
 		
+		final var lg = new LayoutGrid();
+		
 		{
-			final var lg = new LayoutGrid();
-			
 			g.forEach(node -> {
 				final var rowIdx = 1 + 2 * (int) node.getProps().get(K_ROW);
 				final var colIdx = 1 + 2 * (int) node.getProps().get(K_COL);
@@ -141,10 +146,9 @@ public final class GraphLayout {
 			});
 			
 			g.forEach(node -> {
-				lg.forEach(cell -> {
-					cell.setDistance(Integer.MAX_VALUE);
-					cell.setTurns(0);
-				});
+				lg.forEach(LayoutGrid.Cell::reset);
+				
+				Log.out(1, node, node.outgoingEdges);
 				
 				final var targets = node.streamOutgoingEdges()
 						.map(Graph.Edge::getEndNode)
@@ -168,8 +172,7 @@ public final class GraphLayout {
 						
 						if (null != neighbor) {
 							if (targets.remove(neighbor.getNode())) {
-								Log.outf(1, "TODO %s -> %s", node.getIndex(), neighbor.getNode().getIndex()); // TODO Build path to target
-								Log.outf(1, "Remaining targets: %s", targets);
+								buildPath(lg, nodeCell, neighbor);
 							} else if (null == neighbor.getNode() && nextDistance < neighbor.getDistance()) {
 								neighbor.setDistance(nextDistance);
 								todo.add(neighbor);
@@ -178,10 +181,9 @@ public final class GraphLayout {
 					}
 				}
 			});
-			
 		}
 		
-		{
+		if (false) {
 			final var gridBounds = new Rectangle();
 			
 			g.forEach(node -> {
@@ -347,6 +349,29 @@ public final class GraphLayout {
 		}
 		
 		Log.done();
+		
+		return lg;
+	}
+	
+	private static final void buildPath(final LayoutGrid lg, final Cell fromCell, final Cell toCell) {
+		final var path = new LayoutGrid.Path(fromCell, toCell);
+		var pathCell = toCell;
+		
+		while (0 < pathCell.getDistance()) {
+			for (final var pathSide : LayoutGrid.Cell.Side.values()) {
+				final var pathCellNeighbor = lg.neighbor(pathCell, pathSide);
+				
+				if (null != pathCellNeighbor && pathCellNeighbor.getDistance() < pathCell.getDistance()) {
+					path.prependWaypoint(pathCell, pathSide);
+					
+					pathCell = pathCellNeighbor;
+					
+					break;
+				}
+			}
+		}
+		
+		Log.outf(1, " %s %s", path.getOri(), path.getWaypoints());
 	}
 	
 	/**
@@ -430,135 +455,8 @@ public final class GraphLayout {
 		public final Point2D getSegmentOffset(final Graph.Edge edge, final List<Point2D> segment) {
 			this.edges.sort((e1, e2) -> Double.compare(this.edgeRanks.get(e1), this.edgeRanks.get(e2)));
 			
-//			if (this.groupBySrc2.keySet().stream().anyMatch(n -> "17".equals(n.getProps().get(Graph.K_LABEL)))
-//					&& this.groupByDst2.keySet().stream().anyMatch(n -> "17".equals(n.getProps().get(Graph.K_LABEL)))
-//					&& this.groupBySrc2.keySet().stream().anyMatch(n -> "27".equals(n.getProps().get(Graph.K_LABEL)))) {
-//				Log.out(1, this.edgeRanks);
-//			}
-			
 			var i = this.edges.indexOf(edge);
 			var n = this.edges.size();
-			
-//			final var ns1 = this.groupBySrc1.size();
-//			final var nd1 = this.groupByDst1.size();
-//			final var ns2 = this.groupBySrc2.size();
-//			final var nd2 = this.groupByDst2.size();
-//			final var dot = this.computeSegmentDot(segment);
-//			
-//			final var ns1s2 = ns1 + ns2;
-//			final var ns1d2 = ns1 + nd2;
-//			final var nd1s2 = nd1 + ns2;
-//			final var nd1d2 = nd1 + nd2;
-//			final var nMin = Math.min(n, Math.min(ns1s2, Math.min(ns1d2, Math.min(nd1s2, nd1d2))));
-//			
-//			if (this.groupByDst2.keySet().stream().anyMatch(node -> 29 == node.getIndex())
-//					&& this.groupBySrc2.keySet().stream().anyMatch(node -> 17 == node.getIndex())
-//					&& this.groupBySrc2.keySet().stream().anyMatch(node -> 20 == node.getIndex())) {
-//				Log.out(1, this.edgeRanks);
-//				Log.out(1, n, ns1s2, ns1d2, nd1s2, nd1d2);
-//			}
-//			
-//			if (nMin == ns1s2) {
-//				final var map1 = this.groupBySrc1;
-//				final var map2 = this.groupBySrc2;
-//				final var lst = new ArrayList<>(map1.values());
-//				
-//				lst.addAll(map2.values());
-//				lst.sort((l1, l2) -> {
-//					final var r1 = l1.stream().mapToDouble(this.edgeRanks::get).sum();
-//					final var r2 = l2.stream().mapToDouble(this.edgeRanks::get).sum();
-//					
-//					return Double.compare(r1, r2);
-//				});
-//				
-//				if (this.groupByDst2.keySet().stream().anyMatch(node -> "29".equals(node.getProps().get(Graph.K_LABEL)))
-//						&& this.groupBySrc2.keySet().stream().anyMatch(node -> "17".equals(node.getProps().get(Graph.K_LABEL)))
-//						&& this.groupBySrc2.keySet().stream().anyMatch(node -> "20".equals(node.getProps().get(Graph.K_LABEL)))) {
-//					Log.out(1, lst);
-//					Log.out(1, "", map1);
-//					Log.out(1, "", map2);
-//				}
-//				
-//				i = -1;
-//				
-//				for (var j = 0; j < lst.size(); j += 1) {
-//					if (lst.get(j).contains(edge)) {
-//						i = j;
-//						break;
-//					}
-//				}
-//				
-//				n = ns1 + ns2;
-//			} else if (nMin == ns1d2) {
-//				final var map1 = this.groupBySrc1;
-//				final var map2 = this.groupByDst2;
-//				final var lst = new ArrayList<>(map1.values());
-//				
-//				lst.addAll(map2.values());
-//				lst.sort((l1, l2) -> {
-//					final var r1 = l1.stream().mapToDouble(this.edgeRanks::get).sum();
-//					final var r2 = l2.stream().mapToDouble(this.edgeRanks::get).sum();
-//					
-//					return Double.compare(r1, r2);
-//				});
-//				
-//				i = -1;
-//				
-//				for (var j = 0; j < lst.size(); j += 1) {
-//					if (lst.get(j).contains(edge)) {
-//						i = j;
-//						break;
-//					}
-//				}
-//				
-//				n = ns1 + nd2;
-//			} else if (nMin == nd1s2) {
-//				final var map1 = this.groupByDst1;
-//				final var map2 = this.groupBySrc2;
-//				final var lst = new ArrayList<>(map1.values());
-//				
-//				lst.addAll(map2.values());
-//				lst.sort((l1, l2) -> {
-//					final var r1 = l1.stream().mapToDouble(this.edgeRanks::get).sum();
-//					final var r2 = l2.stream().mapToDouble(this.edgeRanks::get).sum();
-//					
-//					return Double.compare(r1, r2);
-//				});
-//				
-//				i = -1;
-//				
-//				for (var j = 0; j < lst.size(); j += 1) {
-//					if (lst.get(j).contains(edge)) {
-//						i = j;
-//						break;
-//					}
-//				}
-//				
-//				n = nd1 + ns2;
-//			} else if (nMin == nd1d2) {
-//				final var map1 = this.groupByDst1;
-//				final var map2 = this.groupByDst2;
-//				final var lst = new ArrayList<>(map1.values());
-//				
-//				lst.addAll(map2.values());
-//				lst.sort((l1, l2) -> {
-//					final var r1 = l1.stream().mapToDouble(this.edgeRanks::get).sum();
-//					final var r2 = l2.stream().mapToDouble(this.edgeRanks::get).sum();
-//					
-//					return Double.compare(r1, r2);
-//				});
-//				
-//				i = -1;
-//				
-//				for (var j = 0; j < lst.size(); j += 1) {
-//					if (lst.get(j).contains(edge)) {
-//						i = j;
-//						break;
-//					}
-//				}
-//				
-//				n = nd1 + nd2;
-//			}
 			
 			final var lst_ = new ArrayList<Collection<Graph.Edge>>();
 			final var individuals = new ArrayList<Graph.Edge>();
@@ -577,7 +475,7 @@ public final class GraphLayout {
 				}
 			}
 			
-			for (final var group : this.groupBySrc1.values()) {
+			final Consumer<Collection<Graph.Edge>> extractFromGroup = group -> {
 				if (1 < group.size()) {
 					final var tmp = new HashSet<>(group);
 					tmp.removeAll(individuals);
@@ -585,37 +483,12 @@ public final class GraphLayout {
 						lst_.add(tmp);
 					}
 				}
-			}
+			};
 			
-			for (final var group : this.groupByDst1.values()) {
-				if (1 < group.size()) {
-					final var tmp = new HashSet<>(group);
-					tmp.removeAll(individuals);
-					if (!tmp.isEmpty()) {
-						lst_.add(tmp);
-					}
-				}
-			}
-			
-			for (final var group : this.groupBySrc2.values()) {
-				if (1 < group.size()) {
-					final var tmp = new HashSet<>(group);
-					tmp.removeAll(individuals);
-					if (!tmp.isEmpty()) {
-						lst_.add(tmp);
-					}
-				}
-			}
-			
-			for (final var group : this.groupByDst2.values()) {
-				if (1 < group.size()) {
-					final var tmp = new HashSet<>(group);
-					tmp.removeAll(individuals);
-					if (!tmp.isEmpty()) {
-						lst_.add(tmp);
-					}
-				}
-			}
+			this.groupBySrc1.values().forEach(extractFromGroup);
+			this.groupByDst1.values().forEach(extractFromGroup);
+			this.groupBySrc2.values().forEach(extractFromGroup);
+			this.groupByDst2.values().forEach(extractFromGroup);
 			
 			for (final var individual : individuals) {
 				lst_.add(Set.of(individual));
@@ -653,9 +526,9 @@ public final class GraphLayout {
 				}
 			}
 			
-			Log.out(1, this.edgeRanks);
-			Log.out(1, lst_);
-			Log.out(1, "", edge, i);
+			Log.out(6, this.edgeRanks);
+			Log.out(6, lst_);
+			Log.out(6, "", edge, i);
 			
 			if (i < 0) {
 				throw new IllegalStateException();
@@ -669,6 +542,136 @@ public final class GraphLayout {
 					lerp(-this.wallDir.getY() * scale / 2.0, this.wallDir.getY() * scale / 2.0, t));
 		}
 		
+	}
+	
+	public static final void writeSvg(final LayoutGrid grid, final String filePath)
+			throws XMLStreamException, FactoryConfigurationError, FileNotFoundException {
+		Log.beginf(1, "Writing svg %s", filePath);
+		
+		try (final var svgOut = new PrintStream(filePath)) {
+			final var svg = new MyXMLStreamWriter(svgOut);
+			final var cellWidth = 40;
+			final var cellHeight = 20;
+			final var minCellDim = Math.min(cellWidth, cellHeight);
+			final var viewBox = new Rectangle();
+			
+			grid.forEach(cell -> {
+				viewBox.add(
+						cellWidth * (1 + cell.getColIdx()),
+						cellHeight * (1 + cell.getRowIdx()));
+			});
+			
+			{
+				svg.writeStartDocument();
+				
+				xmlElement(svg, "svg", () -> {
+					svg.writeAttribute("xmlns", "http://www.w3.org/2000/svg");
+					svg.writeAttribute("xmlns:xlink", "http://www.w3.org/1999/xlink");
+					svg.writeAttribute("viewBox", String.format("%s %s %s %s",
+							viewBox.x, viewBox.y, viewBox.width, viewBox.height));
+					svg.writeAttribute("style", "height: 800; width: auto");
+					
+					xmlElement(svg, "defs", () -> {
+						xmlElement(svg, "marker", () -> {
+							svg.writeAttribute("id", "head");
+							svg.writeAttribute("orient", "auto");
+							svg.writeAttribute("markerWidth", "6");
+							svg.writeAttribute("markerHeight", "8");
+							svg.writeAttribute("refX", "3.2");
+							svg.writeAttribute("refY", "4");
+							
+							xmlElement(svg, "path", () -> {
+								svg.writeAttribute("d", "M0,0 V8 L4,4 Z");
+								svg.writeAttribute("fill", "black");
+							});
+						});
+					});
+					
+					for (final var cell : in(grid.streamCells())) {
+						final var node = cell.getNode();
+						
+						if (null != node) {
+							final var cellX = cellWidth * cell.getColIdx();
+							final var cellY = cellHeight * cell.getRowIdx();
+							final var centerX = cellX + cellWidth / 2;
+							final var centerY = cellY + cellHeight / 2;
+							
+							xmlElement(svg, "rect", () -> {
+								svg.writeAttribute("fill", "none");
+								svg.writeAttribute("stroke", "black");
+								svg.writeAttribute("stroke-width", "0.25");
+								svg.writeAttribute("x", "" + cellX);
+								svg.writeAttribute("y", "" + cellY);
+								svg.writeAttribute("width", "" + cellWidth);
+								svg.writeAttribute("height", "" + cellHeight);
+								svg.writeAttribute("rx", "" + minCellDim / 4);
+								svg.writeAttribute("ry", "" + minCellDim / 4);
+								svg.writeAttribute("style", "");
+							});
+							
+							xmlElement(svg, "text", () -> {
+								svg.writeAttribute("text-anchor", "middle");
+								svg.writeAttribute("dominant-baseline", "central");
+								svg.writeAttribute("font-size", "" + cellHeight * 6.0 / 20.0);
+								svg.writeAttribute("x", "" + centerX);
+								svg.writeAttribute("y", "" + centerY);
+								svg.writeCharacters(node.getProps().getOrDefault(Graph.K_LABEL, "").toString());
+							});
+							
+							for (final var path : in(cell.streamOutgoingPaths())) {
+								final var dBuilder = new StringBuilder();
+								
+								final BiConsumer<Integer, BiConsumer<Double, Double>> f = (i, g) -> {
+									final var wi = path.getWaypoints().get(i);
+									final var wiCellX = wi.getCell().getColIdx() * cellWidth;
+									final var wiCellY = wi.getCell().getRowIdx() * cellHeight;
+									final var wiSide = wi.getSide();
+									final var wiSideGeomWallOri = wiSide.getGeomWallOri();
+									final var wiSideGeomWallDir = wiSide.getGeomWallDir();
+									final var wiPosition = wi.getPosition();
+									final var wiX = wiCellX + (wiSideGeomWallOri.getX() + wiSideGeomWallDir.getX() * wiPosition) * cellWidth;
+									final var wiY = wiCellY + (wiSideGeomWallOri.getY() + wiSideGeomWallDir.getY() * wiPosition) * cellHeight;
+									
+									g.accept(wiX, wiY);
+								};
+								
+								f.accept(0, (x, y) -> {
+									dBuilder.append("M");
+									dBuilder.append(x);
+									dBuilder.append(",");
+									dBuilder.append(y);
+								});
+								
+								for (var i = 1; i < path.getWaypoints().size(); i += 1) {
+									f.accept(i, (x, y) -> {
+										dBuilder.append("L");
+										dBuilder.append(x);
+										dBuilder.append(",");
+										dBuilder.append(y);
+									});
+								}
+								
+								xmlElement(svg, "path", () -> {
+									svg.writeAttribute("fill", "none");
+									svg.writeAttribute("stroke", "black");
+									svg.writeAttribute("stroke-width", "0.25");
+									svg.writeAttribute("d", dBuilder.toString());
+									svg.writeAttribute("marker-end", "url(#head)");
+								});
+							}
+						}
+					}
+				});
+				
+				svg.writeEndDocument();
+			}
+		}
+		
+		Log.done();
+		
+		Chrono.getTimes().forEach((k, v) -> {
+			Log.outf(1, " time(%s)=%s", k, v);
+		});
 	}
 	
 	public static final void writeSvg(final Graph g, final String filePath)
@@ -1292,11 +1295,14 @@ public final class GraphLayout {
 			return this.rows.isEmpty() ? 0 : this.rows.get(0).size();
 		}
 		
-		public final void forEach(final Consumer<Cell> action) {
-			this.rows.stream()
+		public final Stream<Cell> streamCells() {
+			return this.rows.stream()
 			.flatMap(Collection::stream)
-			.filter(Objects::nonNull)
-			.forEach(action);
+			.filter(Objects::nonNull);
+		}
+		
+		public final void forEach(final Consumer<Cell> action) {
+			this.streamCells().forEach(action);
 		}
 		
 		public final Cell cell(final int rowIdx, final int colIdx) {
@@ -1320,11 +1326,11 @@ public final class GraphLayout {
 		public final Cell neighbor(final Cell cell, final Cell.Side side) {
 			switch (side) {
 			case EAST:
-				if (cell.getColIdx() <= 0) {
+				if (this.countCols() <= cell.getColIdx()) {
 					return null;
 				}
 				
-				return this.cell(cell.getRowIdx(), cell.getColIdx() - 1);
+				return this.cell(cell.getRowIdx(), cell.getColIdx() + 1);
 			case NORTH:
 				if (cell.getRowIdx() <= 0) {
 					return null;
@@ -1338,18 +1344,18 @@ public final class GraphLayout {
 				
 				return this.cell(cell.getRowIdx() + 1, cell.getColIdx());
 			case WEST:
-				if (this.countCols() <= cell.getColIdx()) {
+				if (cell.getColIdx() <= 0) {
 					return null;
 				}
 				
-				return this.cell(cell.getRowIdx(), cell.getColIdx() + 1);
+				return this.cell(cell.getRowIdx(), cell.getColIdx() - 1);
 			default:
 				throw new IllegalStateException(String.format("Invalid side %s", side));
 			}
 		}
 		
 		public final Cell findCell(final int rowIdx, final int colIdx) {
-			if (rowIdx < this.countRows() && colIdx < this.countCols()) {
+			if (Helpers.inRange(this.countRows(), rowIdx) && Helpers.inRange(this.countCols(), colIdx)) {
 				return this.getRowElement(rowIdx, colIdx);
 			}
 			
@@ -1363,25 +1369,12 @@ public final class GraphLayout {
 		private final Cell setRowElement(final int rowIdx, final int colIdx) {
 			final var result = new Cell(rowIdx, colIdx);
 			
-			if (0 < rowIdx) {
-				result.setWall(Cell.Side.NORTH, this.getRowElement(rowIdx - 1, colIdx));
-			}
+			result.setWall(Cell.Side.NORTH, this.findCell(rowIdx - 1, colIdx));
+			result.setWall(Cell.Side.WEST, this.findCell(rowIdx, colIdx - 1));
+			result.setWall(Cell.Side.EAST, this.findCell(rowIdx, colIdx + 1));
+			result.setWall(Cell.Side.SOUTH, this.findCell(rowIdx + 1, colIdx));
 			
-			final var row = this.rows.get(rowIdx);
-			
-			if (0 < colIdx) {
-				result.setWall(Cell.Side.EAST, row.get(colIdx - 1));
-			}
-			
-			if (colIdx + 1 < row.size()) {
-				result.setWall(Cell.Side.EAST, row.get(colIdx + 1));
-			}
-			
-			if (rowIdx + 1 < this.countRows()) {
-				result.setWall(Cell.Side.SOUTH, this.getRowElement(rowIdx + 1, colIdx));
-			}
-			
-			row.set(colIdx, result);
+			this.rows.get(rowIdx).set(colIdx, result);
 			
 			return result;
 		}
@@ -1406,6 +1399,8 @@ public final class GraphLayout {
 			public Cell(final int rowIdx, final int colIdx) {
 				this.rowIdx = rowIdx;
 				this.colIdx = colIdx;
+				
+				this.reset();
 			}
 			
 			public final int getRowIdx() {
@@ -1429,7 +1424,23 @@ public final class GraphLayout {
 					wall = new ArrayList<>();
 				}
 				
-				this.walls.put(side, wall);
+				this.walls.put(side, Objects.requireNonNull(wall));
+			}
+			
+			public final Stream<Path> streamOutgoingPaths() {
+				return this.walls.values().stream()
+						.flatMap(Collection::stream)
+						.map(Waypoint::getPaths)
+						.flatMap(Collection::stream)
+						.filter(path -> this == path.getOri());
+			}
+			
+			public final Waypoint newWaypoint(final Side side, final Path path) {
+				final var result = new LayoutGrid.Waypoint(this, side);
+				
+				this.getWall(side).add(result);
+				
+				return result;
 			}
 			
 			public final Graph.Node getNode() {
@@ -1438,6 +1449,11 @@ public final class GraphLayout {
 			
 			public final void setNode(Graph.Node node) {
 				this.node = node;
+			}
+			
+			public final void reset() {
+				this.setDistance(Integer.MAX_VALUE);
+				this.setTurns(0);
 			}
 			
 			public final int getDistance() {
@@ -1455,6 +1471,18 @@ public final class GraphLayout {
 			public final void setTurns(final int turns) {
 				this.turns = turns;
 			}
+			
+			@Override
+			public final String toString() {
+				return String.format("@%s,%s<%s>", this.getRowIdx(), this.getColIdx(), this.getNode());
+			}
+			
+			private static final Point2D ZZ = new Point2D.Double(0.0, 0.0);
+			private static final Point2D PZ = new Point2D.Double(+1.0, 0.0);
+			private static final Point2D NZ = new Point2D.Double(-1.0, 0.0);
+			private static final Point2D ZP = new Point2D.Double(0.0, +1.0);
+			private static final Point2D ZN = new Point2D.Double(0.0, -1.0);
+			private static final Point2D PP = new Point2D.Double(+1.0, +1.0);
 			
 			/**
 			 * @author 2oLDNncs 20250416
@@ -1482,6 +1510,18 @@ public final class GraphLayout {
 						}
 					}
 					
+					@Override
+					public final Point2D getGeomWallOri() {
+//						return PZ;
+						return ZZ;
+					}
+					
+					@Override
+					public final Point2D getGeomWallDir() {
+//						return NZ;
+						return PZ;
+					}
+					
 				}, WEST {
 					
 					@Override
@@ -1501,6 +1541,16 @@ public final class GraphLayout {
 						default:
 							throw new IllegalArgumentException(String.format("%s", other));
 						}
+					}
+					
+					@Override
+					public final Point2D getGeomWallOri() {
+						return ZZ;
+					}
+					
+					@Override
+					public final Point2D getGeomWallDir() {
+						return ZP;
 					}
 					
 				}, SOUTH {
@@ -1524,6 +1574,16 @@ public final class GraphLayout {
 						}
 					}
 					
+					@Override
+					public final Point2D getGeomWallOri() {
+						return ZP;
+					}
+					
+					@Override
+					public final Point2D getGeomWallDir() {
+						return PZ;
+					}
+					
 				}, EAST {
 					
 					@Override
@@ -1545,11 +1605,27 @@ public final class GraphLayout {
 						}
 					}
 					
+					@Override
+					public final Point2D getGeomWallOri() {
+//						return PP;
+						return PZ;
+					}
+					
+					@Override
+					public final Point2D getGeomWallDir() {
+//						return ZN;
+						return ZP;
+					}
+					
 				};
 				
 				public abstract Side flip();
 				
 				public abstract int getRelation(Side other);
+				
+				public abstract Point2D getGeomWallOri();
+				
+				public abstract Point2D getGeomWallDir();
 				
 			}
 			
@@ -1560,11 +1636,59 @@ public final class GraphLayout {
 		 */
 		public static final class Waypoint {
 			
+			private final Cell cell;
+			
+			private final Cell.Side side;
+			
 			private Waypoint previous;
 			
 			private Waypoint next;
 			
 			private final List<Path> paths = new ArrayList<>();
+			
+			public Waypoint(final Cell cell, final Side side) {
+				this.cell = cell;
+				this.side = side;
+			}
+			
+			public final Waypoint getPrevious() {
+				return this.previous;
+			}
+			
+			public final void setPrevious(final Waypoint previous) {
+				this.previous = previous;
+			}
+			
+			public final Waypoint getNext() {
+				return this.next;
+			}
+			
+			public final void setNext(final Waypoint next) {
+				this.next = next;
+			}
+			
+			public final Cell getCell() {
+				return this.cell;
+			}
+			
+			public final Cell.Side getSide() {
+				return this.side;
+			}
+			
+			public final List<Path> getPaths() {
+				return this.paths;
+			}
+			
+			public final double getPosition() {
+				final var wall = this.getCell().getWall(this.getSide());
+				
+				return (wall.indexOf(this) + 1.0) / (wall.size() + 1.0);
+			}
+			
+			@Override
+			public final String toString() {
+				return String.format("%s.%s", this.getCell(), this.getSide());
+			}
 			
 		}
 		
@@ -1594,6 +1718,19 @@ public final class GraphLayout {
 			
 			public final List<Waypoint> getWaypoints() {
 				return this.waypoints;
+			}
+			
+			public final void prependWaypoint(final Cell cell, final Cell.Side side) {
+				final var wp = cell.newWaypoint(side, this);
+				
+				wp.getPaths().add(this);
+				
+				this.getWaypoints().add(0, wp);
+			}
+			
+			@Override
+			public final String toString() {
+				return String.format("%s -> %s %s", this.getOri(), this.getDst(), this.getWaypoints());
 			}
 			
 		}
