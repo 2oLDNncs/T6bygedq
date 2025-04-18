@@ -22,10 +22,11 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.NavigableMap;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.Random;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
@@ -74,11 +75,15 @@ public final class GraphLayout {
 			{
 				final var allPossibleEdges = IntStream.range(0, nbNodes * nbNodes)
 						.mapToObj(Integer::valueOf)
-						.collect(Collectors.toCollection(ArrayList::new));
+						.collect(Helpers.toList());
 				
 				Collections.shuffle(allPossibleEdges, rand);
 				
-				allPossibleEdges.subList(0, nbEdges).forEach(e -> g.getNode(e / nbNodes).edgeTo(g.getNode(e % nbNodes)));
+				allPossibleEdges.subList(0, nbEdges).forEach(e -> {
+					final var src = g.getNode(e / nbNodes);
+					final var dst = g.getNode(e % nbNodes);
+					src.edgeTo(dst);
+				});
 			}
 			
 			Log.done();
@@ -130,6 +135,21 @@ public final class GraphLayout {
 		
 		g.forEach(node -> computeNodeDepth(Arrays.asList(node), getRow));
 		
+		reorderNodesInEachRow(grid);
+		
+		final var compWidths = computeCompWidths(grid);
+		
+		Log.out(1, compWidths);
+		
+		final var compOffsets = computeCompOffsets(compWidths);
+		
+		Log.out(1, compOffsets);
+		
+		final var compSubOffsets = computeCompSubOffsets(grid, compOffsets);
+		
+		Log.out(1, compSubOffsets);
+		
+		
 		if (Log.isEnabled(4)) {
 			g.forEach(node -> {
 				Log.outf(0, "%s %s", node.getIndex(), node.getProps());
@@ -146,8 +166,14 @@ public final class GraphLayout {
 		
 		{
 			g.forEach(node -> {
-				final var rowIdx = 1 + 2 * (int) node.getProps().get(K_ROW);
-				final var colIdx = 1 + 2 * (int) node.getProps().get(K_COL);
+				final var compId = node.getCompId();
+				final var propRow = (int) node.getProps().get(K_ROW);
+				final var propCol = (int) node.getProps().get(K_COL) + compSubOffsets.get(compId).get(propRow);
+				
+				node.getProps().put(K_COL, propCol);
+				
+				final var rowIdx = 1 + 2 * propRow;
+				final var colIdx = 1 + 2 * propCol;
 				
 				lg.cell(rowIdx, colIdx).setNode(node);
 				lg.cell(rowIdx + 1, colIdx + 1); // east and south borders (north and west already taken care of by rowIdx and colIdx)
@@ -198,6 +224,10 @@ public final class GraphLayout {
 							}
 						}
 					}
+				}
+				
+				if (!targets.isEmpty()) {
+					Log.err(1, node, node.outgoingEdges, targets);
 				}
 			});
 		}
@@ -372,6 +402,99 @@ public final class GraphLayout {
 		return lg;
 	}
 	
+	private static final NavigableMap<Integer, Map<Integer, Integer>> computeCompSubOffsets(final Iterable<List<Graph.Node>> grid,
+			final Map<Integer, Integer> compOffsets) {
+		final var compSubOffsets = new TreeMap<Integer, Map<Integer, Integer>>();
+		
+		grid.forEach(row -> {
+			row.forEach(node -> {
+				final var compId = node.getCompId();
+				final var props = node.getProps();
+				compSubOffsets.computeIfAbsent(compId, __ -> new TreeMap<>())
+				.computeIfAbsent((Integer) props.get(K_ROW), __ -> compOffsets.get(compId) - (int) props.get(K_COL));
+			});
+		});
+		return compSubOffsets;
+	}
+	
+	private static final void reorderNodesInEachRow(final Iterable<List<Graph.Node>> grid) {
+		for (final var j : IntStream.range(0, 10).toArray()) {
+			grid.forEach(row -> {
+				row.sort((node1, node2) -> {
+					final var node1CompId = node1.getCompId();
+					final var node2CompId = node2.getCompId();
+					
+					final var cmpCompId = Integer.compare(node1CompId, node2CompId);
+					
+					if (0 != cmpCompId) {
+						return cmpCompId;
+					}
+					
+					final var node1TargetCol = Stream.concat(
+							node1.streamOutgoingEdges().map(Graph.Edge::getEndNode),
+							node1.streamIncomingEdges().map(Graph.Edge::getStartNode))
+							.map(Graph.Node::getProps)
+							.mapToDouble(props -> (int) props.get(K_COL))
+							.average().orElse((int) node1.getProps().get(K_COL));
+					final var node2TargetCol = Stream.concat(
+							node2.streamOutgoingEdges().map(Graph.Edge::getEndNode),
+							node2.streamIncomingEdges().map(Graph.Edge::getStartNode))
+							.map(Graph.Node::getProps)
+							.mapToDouble(props -> (int) props.get(K_COL))
+							.average().orElse((int) node2.getProps().get(K_COL));
+					
+					return Double.compare(node1TargetCol, node2TargetCol);
+				});
+				
+				for (var i = 0; i < row.size(); i += 1) {
+					final var before = (int) row.get(i).getProps().get(K_COL);
+					
+					if (i != before) {
+						row.get(i).getProps().put(K_COL, i);
+						Log.out(1, j, row.get(i).getProps());
+					}
+				}
+			});
+		}
+	}
+	
+	private static final NavigableMap<Integer, Integer> computeCompOffsets(final Map<Integer, Integer> compWidths) {
+		final var result = new TreeMap<Integer, Integer>();
+		
+		compWidths.keySet().forEach(compId -> {
+			if (result.isEmpty()) {
+				result.put(compId, 0);
+			} else {
+				final var lastEntry = result.lastEntry();
+				
+				result.put(compId, compWidths.get(lastEntry.getKey()) + lastEntry.getValue());
+			}
+		});
+		
+		return result;
+	}
+	
+	private static final NavigableMap<Integer, Integer> computeCompWidths(final Iterable<List<Graph.Node>> grid) {
+		final var result = new TreeMap<Integer, Integer>();
+		
+		grid.forEach(row -> {
+			final var compBounds = new HashMap<Integer, Rectangle>();
+			
+			for (var i = 0; i < row.size(); i += 1) {
+				final var node = row.get(i);
+				
+				node.getProps().put(K_COL, i);
+				compBounds.computeIfAbsent(node.getCompId(), __ -> new Rectangle(-1, -1)).add(i, 0);
+			}
+			
+			compBounds.forEach((compId, bounds) -> {
+				result.compute(compId, (__, old) -> Math.max(1 + bounds.width, null == old ? 0 : old));
+			});
+		});
+		
+		return result;
+	}
+	
 	private static final void buildPath(final LayoutGrid lg, final Cell fromCell, final Cell toCell) {
 		final var path = new LayoutGrid.Path(fromCell, toCell);
 		var pathCell = toCell;
@@ -390,7 +513,7 @@ public final class GraphLayout {
 			}
 		}
 		
-		Log.outf(1, " %s %s", path.getOri(), path.getWaypoints());
+		Log.outf(6, " %s %s", path.getOri(), path.getWaypoints());
 	}
 	
 	/**
@@ -588,7 +711,7 @@ public final class GraphLayout {
 					svg.writeAttribute("xmlns:xlink", "http://www.w3.org/1999/xlink");
 					svg.writeAttribute("viewBox", String.format("%s %s %s %s",
 							viewBox.x, viewBox.y, viewBox.width, viewBox.height));
-					svg.writeAttribute("style", "height: 800; width: auto");
+					svg.writeAttribute("style", String.format("width: %s; height: %s", viewBox.width, viewBox.height));
 					
 					xmlElement(svg, "defs", () -> {
 						xmlElement(svg, "marker", () -> {
@@ -634,7 +757,7 @@ public final class GraphLayout {
 								svg.writeAttribute("font-size", "" + cellHeight * 6.0 / 20.0);
 								svg.writeAttribute("x", "" + centerX);
 								svg.writeAttribute("y", "" + centerY);
-								svg.writeCharacters(node.getProps().getOrDefault(Graph.K_LABEL, "").toString());
+								svg.writeCharacters(node.toString() + ":" + node.getProps().getOrDefault(Graph.K_LABEL, "").toString());
 							});
 							
 							for (final var path : in(cell.streamOutgoingPaths())) {
@@ -1102,12 +1225,18 @@ public final class GraphLayout {
 			
 			private final List<Node> children = new ArrayList<>();
 			
+			private final CompId compId = new CompId();
+			
 			public Node(final int index) {
 				this.index = index;
 			}
 			
 			public final int getIndex() {
 				return this.index;
+			}
+			
+			public final int getCompId() {
+				return this.compId.getVal();
 			}
 			
 			public final Node getParent() {
@@ -1151,6 +1280,8 @@ public final class GraphLayout {
 			}
 			
 			public final Edge edgeTo(final Node edgeEndNode) {
+				edgeEndNode.compId.topWith(this.compId);
+				
 				return this.edgeTo(edgeEndNode, i -> {
 					final var result = new Edge(this, edgeEndNode);
 					
@@ -1205,7 +1336,9 @@ public final class GraphLayout {
 			@Override
 			public final String toString() {
 //				return String.format("%s%s", this.getIndex(), this.getProps());
-				return String.format("%s", this.getIndex());
+//				return String.format("%s", this.getIndex());
+				return String.format("%s.%s", this.getCompId(), this.getIndex());
+//				return String.format("%s.%s%s", this.getCompId(), this.getIndex(), this.getProps());
 			}
 			
 			private final void addIncomingEdge(final Edge edge) {
@@ -1255,6 +1388,72 @@ public final class GraphLayout {
 				}
 				
 				return -(low + 1); // key not found
+			}
+			
+			/**
+			 * @author 2oLDNncs 20250418
+			 */
+			private static final class CompId {
+				
+				private final int val = ++lastVal;
+				
+				private CompId top;
+				
+				public final int getVal() {
+					return this.top().val;
+				}
+				
+				public final void topWith(final CompId repl) {
+					if (this.top() != repl.top()) {
+						Log.out(6, this.stack(), repl.stack());
+						this.top().top = repl;
+						Log.out(6, this.stack());
+					}
+				}
+				
+				private final CompId top() {
+					var result = this;
+					
+					while (null != result.top) {
+						result = result.top;
+					}
+					
+					return result;
+				}
+				
+				private final boolean contains(final CompId compId) {
+					var tmp = this;
+					
+					while (null != tmp && tmp != compId) {
+						tmp = tmp.top;
+					}
+					
+					return tmp == compId;
+				}
+				
+				@Override
+				public final String toString() {
+					return "" + this.val;
+				}
+				
+				private final Collection<CompId> stack() {
+					final var result = new ArrayList<CompId>();
+					var tmp = this;
+					
+					while (null != tmp && !result.contains(tmp)) {
+						result.add(tmp);
+						tmp = tmp.top;
+					}
+					
+					if (null != tmp) {
+						result.add(tmp);
+					}
+					
+					return result;
+				}
+				
+				private static int lastVal;
+				
 			}
 		    
 		}
@@ -1345,7 +1544,7 @@ public final class GraphLayout {
 		public final Cell neighbor(final Cell cell, final Cell.Side side) {
 			switch (side) {
 			case EAST:
-				if (this.countCols() <= cell.getColIdx()) {
+				if (this.countCols() <= cell.getColIdx() + 1) {
 					return null;
 				}
 				
@@ -1357,7 +1556,7 @@ public final class GraphLayout {
 				
 				return this.cell(cell.getRowIdx() - 1, cell.getColIdx());
 			case SOUTH:
-				if (this.countRows() <= cell.getRowIdx()) {
+				if (this.countRows() <= cell.getRowIdx() + 1) {
 					return null;
 				}
 				
@@ -1458,25 +1657,14 @@ public final class GraphLayout {
 			}
 			
 			public static final <K, V> boolean removeValue(final Map<K, V> map, final V value) {
-				var key = findKey(map, value);
-				
-				if (key.isEmpty()) {
-					return false;
-				}
-				
-				while (key.isPresent()) {
-					map.remove(key.get());
-					key = findKey(map, value);
-				}
-				
-				return true;
+				return map.keySet().removeAll(findKeys(map, value));
 			}
 			
-			public static final <K, V> Optional<K> findKey(final Map<K, V> map, final V value) {
+			public static final <K, V> Collection<K> findKeys(final Map<K, V> map, final V value) {
 				return map.entrySet().stream()
 						.filter(e -> Objects.equals(e.getValue(), value))
 						.map(Map.Entry::getKey)
-						.findAny();
+						.collect(Collectors.toSet());
 			}
 			
 			public final Waypoint newWaypoint(final Side side, final Path path) {

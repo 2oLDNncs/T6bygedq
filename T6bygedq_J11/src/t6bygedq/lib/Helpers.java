@@ -7,10 +7,13 @@ import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Objects;
+import java.util.stream.Collector;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
 
@@ -28,6 +31,10 @@ public final class Helpers {
 			}
 			
 		};
+	}
+	
+	public static <T> Collector<T, ?, List<T>> toList() {
+		return Collectors.toCollection(ArrayList::new);
 	}
 	
 	public static final <E> E[] array(@SuppressWarnings("unchecked") final E... elements) {
