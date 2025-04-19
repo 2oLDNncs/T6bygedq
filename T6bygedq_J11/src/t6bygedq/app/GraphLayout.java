@@ -895,21 +895,12 @@ public final class GraphLayout {
 				}
 				
 				public final void topWith(final CompId repl) {
-					if (this.top() != repl.top()) {
-						Log.out(6, this.stack(), repl.stack());
-						this.top().top = repl;
-						Log.out(6, this.stack());
-					}
-				}
-				
-				private final CompId top() {
-					var result = this;
+					final var thisTop = this.top();
+					final var replTop = repl.top();
 					
-					while (null != result.top) {
-						result = result.top;
+					if (thisTop != replTop) {
+						thisTop.top = replTop;
 					}
-					
-					return result;
 				}
 				
 				@Override
@@ -917,7 +908,29 @@ public final class GraphLayout {
 					return "" + this.val;
 				}
 				
-				private final Collection<CompId> stack() {
+				private final CompId top() {
+					if (null != this.top && null != this.top.top) {
+						this.pack();
+					}
+					
+					return Objects.requireNonNullElse(this.top, this);
+				}
+				
+				private final void pack() {
+					final var stack = this.stack();
+					final var stackTop = Helpers.last(stack);
+					
+					for (var i = stack.size() - 1; 0 <= i; i -= 1) {
+						final var element = stack.get(i);
+						element.top = stackTop;
+						
+						if (element.top == element) {
+							element.top = null;
+						}
+					}
+				}
+				
+				private final List<CompId> stack() {
 					final var result = new ArrayList<CompId>();
 					var tmp = this;
 					
