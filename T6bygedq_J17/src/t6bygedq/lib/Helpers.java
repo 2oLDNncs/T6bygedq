@@ -22,6 +22,15 @@ import java.util.stream.StreamSupport;
  */
 public final class Helpers {
 	
+	public static final boolean[] EMPTY_BOOLEANS = new boolean[0];
+	public static final byte[] EMPTY_BYTES = new byte[0];
+	public static final short[] EMPTY_SHORTS = new short[0];
+	public static final char[] EMPTY_CHARS = new char[0];
+	public static final int[] EMPTY_INTS = new int[0];
+	public static final float[] EMPTY_FLOATS = new float[0];
+	public static final long[] EMPTY_LONGS = new long[0];
+	public static final double[] EMPTY_DOUBLES = new double[0];
+	
 	public static final <E> Iterable<E> in(final Stream<E> stream) {
 		return new Iterable<>() {
 			
