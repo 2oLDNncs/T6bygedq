@@ -200,7 +200,10 @@ public final class GraphLayout {
 				final var nbRows = lg.countRows();
 				final var nbCols = lg.countCols();
 				
-				lg.setGpsStations(lg.cell(0, nbCols / 2), lg.cell(nbRows - 1, 0), lg.cell(nbRows - 1, nbCols - 1));
+//				lg.setGpsStations(lg.cell(0, nbCols / 2), lg.cell(nbRows - 1, 0), lg.cell(nbRows - 1, nbCols - 1));
+//				lg.setGpsStations(lg.cell(0, 0), lg.cell(0, nbCols - 1), lg.cell(nbRows - 1, 0), lg.cell(nbRows - 1, nbCols - 1));
+				lg.setGpsStations(lg.cell(0, 0), lg.cell(0, nbCols - 1), lg.cell(nbRows - 1, 0));
+//				lg.setGpsStations(lg.cell(0, 0), lg.cell(0, nbCols - 1));
 				
 				if (nbRows != lg.countRows()) {
 					throw new IllegalStateException(String.format("Unexpected row count: %s != %s", lg.countRows(), nbRows));
@@ -214,6 +217,7 @@ public final class GraphLayout {
 			lg.computeGpsCoordsForNodeCells();
 			
 			g.forEach(node -> {
+				Log.out(1, node);
 				lg.forEach(LayoutGrid.Cell::reset);
 				
 				Log.out(6, node, node.outgoingEdges);
@@ -237,22 +241,67 @@ public final class GraphLayout {
 					}
 				}
 				
-				if (false) {
+				if (true) {
 					for (final var target : targets) {
 						final var targetRowIdx = 1 + 2 * (int) target.getProps().get(K_ROW);
 						final var targetColIdx = 1 + 2 * (int) target.getProps().get(K_COL);
 						final var targetCell = lg.cell(targetRowIdx, targetColIdx);
 						
-						Log.out(1, "target:", target, "gpsDistance:", lg.gpsDistance(nodeCell, targetCell));
+						Log.out(6, "node:", node, "target:", target, "gpsDistance:", lg.gpsDistance(nodeCell, targetCell));
+						
+						final var path = new LayoutGrid.Path(nodeCell, targetCell);
+						var pathCell = targetCell;
+						
+						while (pathCell != nodeCell) {
+							LayoutGrid.Cell.Side ps = null;
+							LayoutGrid.Cell nextPathCell = null;
+							final var dirR = nodeCell.getRowIdx() - pathCell.getRowIdx();
+							final var dirC = nodeCell.getColIdx() - pathCell.getColIdx();
+							var bestDot = Double.NEGATIVE_INFINITY;
+							
+							for (final var pathSide : LayoutGrid.Cell.Side.N_W_S_E) {
+								final var pathCellNeighbor = lg.neighbor(pathCell, pathSide);
+								var dot = Double.NEGATIVE_INFINITY;
+								
+								if (nodeCell == pathCellNeighbor) {
+									dot = Double.POSITIVE_INFINITY;
+								} else if (null != pathCellNeighbor && null == pathCellNeighbor.getNode()) {
+									dot = dirR * pathSide.dr() + dirC * pathSide.dc();
+								}
+								
+								if (bestDot < dot) {
+									bestDot = dot;
+									ps = pathSide;
+									nextPathCell = pathCellNeighbor;
+								}
+							}
+							
+							path.prependWaypoint(pathCell, ps);
+							pathCell = nextPathCell;
+						}
+						
+						Log.out(6, path, path.waypoints);
+					}
+				} else if (true) {
+					for (final var target : targets) {
+						final var targetRowIdx = 1 + 2 * (int) target.getProps().get(K_ROW);
+						final var targetColIdx = 1 + 2 * (int) target.getProps().get(K_COL);
+						final var targetCell = lg.cell(targetRowIdx, targetColIdx);
+						
+						Log.out(1, "node:", node, "target:", target, "gpsDistance:", lg.gpsDistance(nodeCell, targetCell));
 						
 						final var path = new LayoutGrid.Path(nodeCell, targetCell);
 						var pathCell = targetCell;
 						var remainingDistance = Double.POSITIVE_INFINITY;
+						final var tmp1 = new ArrayList<>();
+						final var tmp2 = new ArrayList<>();
+						tmp1.add(remainingDistance);
 						
 						while (0.0 < remainingDistance) {
 							LayoutGrid.Cell.Side ps = null;
 							LayoutGrid.Cell nextPathCell = null;
 							var rd = remainingDistance;
+							tmp2.clear();
 							
 							for (final var pathSide : LayoutGrid.Cell.Side.N_W_S_E) {
 								final var pathCellNeighbor = lg.neighbor(pathCell, pathSide);
@@ -263,6 +312,7 @@ public final class GraphLayout {
 									rd = 0.0;
 								} else if (null != pathCellNeighbor && null == pathCellNeighbor.getNode()) {
 									final double d = lg.gpsDistance(nodeCell, pathCellNeighbor);
+									tmp2.add(d);
 									
 									if (d < rd) {
 										ps = pathSide;
@@ -273,13 +323,17 @@ public final class GraphLayout {
 							}
 							
 							if (null == ps) {
-								Log.err(1, pathCell, remainingDistance);
+								Log.err(1, pathCell, tmp1, tmp2);
+								Log.err(1, "", path, path.waypoints);
 								break;
 							}
+							Log.out(1, "**", pathCell, tmp1, tmp2);
+							Log.out(1, "***", path, path.waypoints);
 							
 							path.prependWaypoint(pathCell, ps);
 							pathCell = nextPathCell;
 							remainingDistance = rd;
+							tmp1.add(remainingDistance);
 						}
 						
 						Log.out(1, path, path.waypoints);
@@ -471,6 +525,23 @@ public final class GraphLayout {
 					});
 					
 					for (final var cell : in(grid.streamCells())) {
+						if (false) {
+							xmlElement(svg, "text", () -> {
+								final var cellX = cellWidth * cell.getColIdx();
+								final var cellY = cellHeight * cell.getRowIdx();
+								svg.writeAttribute("text-anchor", "left");
+								svg.writeAttribute("dominant-baseline", "hanging");
+								svg.writeAttribute("font-size", "" + cellHeight * 4.0 / 20.0);
+								svg.writeAttribute("x", "" + cellX);
+								svg.writeAttribute("y", "" + cellY);
+								svg.writeAttribute("fill", "red");
+								
+								xmlElement(svg, "tspan", () -> {
+									svg.writeCharacters(Arrays.toString(cell.gpsCoords));
+								});
+							});
+						}
+						
 						final var node = cell.getNode();
 						
 						if (null != node) {
@@ -829,7 +900,8 @@ public final class GraphLayout {
 //				return String.format("%s", this.getIndex());
 //				return String.format("%s.%s", this.getCompId(), this.getIndex());
 //				return String.format("%s.%s%s", this.getCompId(), this.getIndex(), this.getProps());
-				return String.format("%s.%s@%s_%s", this.getCompId(), this.getIndex(), this.getProps().get(K_ROW), this.getProps().get(K_COL));
+//				return String.format("%s.%s@%s_%s", this.getCompId(), this.getIndex(), this.getProps().get(K_ROW), this.getProps().get(K_COL));
+				return String.format("%s.%s@%s_%s", this.getCompId(), this.getIndex(), 1 + 2 * (int) this.getProps().get(K_ROW), 1 + 2 * (int) this.getProps().get(K_COL));
 			}
 			
 			private final void addIncomingEdge(final Edge edge) {
@@ -1030,7 +1102,7 @@ public final class GraphLayout {
 					final var cell = todo.remove(0);
 					final var cellGpsCoord = cell.getGpsCoord(gpsIdx);
 					
-					for (final var delta : LayoutGrid.Cell.Side.D8) {
+					for (final var delta : LayoutGrid.Cell.Side.D4) {
 						final var neighbor = this.neighbor(cell, delta);
 						
 						if (null != neighbor && null == neighbor.getNode()) {
@@ -1039,22 +1111,6 @@ public final class GraphLayout {
 							if (nextCoord < neighbor.getGpsCoord(gpsIdx)) {
 								neighbor.setGpsCoord(gpsIdx, nextCoord);
 								todo.add(neighbor);
-							}
-						}
-					}
-					for (var dr = -1; dr <= +1; dr += 1) {
-						for (var dc = -1; dc <= +1; dc += 1) {
-							if (0 != dr || 0 != dc) {
-								final var neighbor = this.neighbor(cell, dr, dc);
-								
-								if (null != neighbor && null == neighbor.getNode()) {
-									final var nextCoord = Point2D.distance(0.0, 0.0, dc, dr) + cellGpsCoord;
-									
-									if (nextCoord < neighbor.getGpsCoord(gpsIdx)) {
-										neighbor.setGpsCoord(gpsIdx, nextCoord);
-										todo.add(neighbor);
-									}
-								}
 							}
 						}
 					}
@@ -1188,7 +1244,7 @@ public final class GraphLayout {
 		/**
 		 * @author 2oLDNncs 20250415
 		 */
-		public static final class Cell {
+		public static final class Cell extends Obj {
 			
 			private final int rowIdx;
 			
@@ -1477,17 +1533,22 @@ public final class GraphLayout {
 				
 				public static final Side[] N_W_S_E = { NORTH, WEST, SOUTH, EAST };
 				public static final Side[] N_E_S_W = { NORTH, EAST, SOUTH, WEST };
-				public static final Delta[] D8 =
-					{
-							delta(NORTH, WEST),
-							delta(NORTH, null),
-							delta(NORTH, EAST),
-							delta(WEST, null),
-							delta(EAST, null),
-							delta(SOUTH, WEST),
-							delta(SOUTH, null),
-							delta(SOUTH, EAST)
-					};
+				public static final Delta[] D4 = {
+						delta(NORTH, null),
+						delta(WEST, null),
+						delta(EAST, null),
+						delta(SOUTH, null),
+				};
+				public static final Delta[] D8 = {
+						delta(NORTH, WEST),
+						delta(NORTH, null),
+						delta(NORTH, EAST),
+						delta(WEST, null),
+						delta(EAST, null),
+						delta(SOUTH, WEST),
+						delta(SOUTH, null),
+						delta(SOUTH, EAST)
+				};
 				
 				private static final Delta delta(final Side side1, final Side side2) {
 					var dr = side1.dr();
