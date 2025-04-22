@@ -193,7 +193,37 @@ public final class Helpers {
 	public static final boolean testMask(final int flags, final int mask) {
 		return 0 != (flags & mask);
 	}
-	
+
+	public static final <E> Iterable<IndexedElement<E>> inIndexed(final Iterable<E> iterable) {
+		return new Iterable<>() {
+			
+			@Override
+			public final Iterator<IndexedElement<E>> iterator() {
+				return new Iterator<>() {
+					
+					private final IndexedElement<E> result = new IndexedElement<>();
+					
+					private final Iterator<E> it = iterable.iterator();
+					
+					@Override
+					public final boolean hasNext() {
+						return this.it.hasNext();
+					}
+					
+					@Override
+					public final IndexedElement<E> next() {
+						this.result.setIndex(this.result.getIndex() + 1);
+						this.result.setElement(this.it.next());
+						
+						return this.result;
+					}
+					
+				};
+			}
+			
+		};
+	}
+		
 	public static final String dformat(final String format, final Object... args) {
 		return dformat(3, format, args);
 	}
@@ -252,5 +282,32 @@ public final class Helpers {
 		public boolean value() default true;
 		
 	}
-	
+
+	/**
+	 * @author 2oLDNncs 20250421
+	 */
+	public static final class IndexedElement<E> {
+		
+		private int index = -1;
+		
+		private E element;
+		
+		public final int getIndex() {
+			return this.index;
+		}
+		
+		final void setIndex(final int index) {
+			this.index = index;
+		}
+		
+		public final E getElement() {
+			return this.element;
+		}
+		
+		final void setElement(final E element) {
+			this.element = element;
+		}
+		
+	}
+		
 }
