@@ -54,7 +54,7 @@ public final class GraphLayout {
 	public static final void main(final String[] args) throws IOException, XMLStreamException {
 		final var g = new Graph();
 		
-		if (true) {
+		if (false) {
 			Log.begin(1, "Creating graph");
 			
 			final var nbNodes = 40;
@@ -76,6 +76,48 @@ public final class GraphLayout {
 					src.edgeTo(dst);
 				});
 			}
+			
+			Log.done();
+		} else if (true) {
+			final var ap = new ArgsParser(args);
+			
+			ap.setDefault(ARG_IN, "data/test_clusterarcs.txt");
+			
+			Log.beginf(1, "Loading %s", ap.getPath(ARG_IN));
+			
+			final var nodeMap = new HashMap<List<String>, Graph.Node>();
+			final Function<? super List<String>, ? extends Graph.Node> makeNode = lbl -> {
+				final var result = g.addNode();
+				
+				result.getProps().put(Graph.K_LABEL, Helpers.last(lbl));
+				
+				return result;
+			};
+			final Consumer<List<String>> buildClusters = nodePath -> {
+				for (var i = 2; i <= nodePath.size(); i += 1) {
+					final var parent = nodeMap.computeIfAbsent(nodePath.subList(0, i - 1), makeNode);
+					final var child = nodeMap.computeIfAbsent(nodePath.subList(0, i), makeNode);
+					
+					child.setParent(parent);
+				}
+			};
+			
+			Files.lines(ap.getPath(ARG_IN)).forEach(line -> {
+				final var elements = line.split("\t");
+				final var n = elements.length / 2;
+				final var node1Path = Arrays.asList(Arrays.copyOfRange(elements, 0, n));
+				final var node2Path = Arrays.asList(Arrays.copyOfRange(elements, n, elements.length));
+				
+				buildClusters.accept(node1Path);
+				buildClusters.accept(node2Path);
+				
+				final var start = nodeMap.computeIfAbsent(node1Path, makeNode);
+				final var end = nodeMap.computeIfAbsent(node2Path, makeNode);
+				
+				start.edgeTo(end);
+			});
+			
+			Log.out(1, nodeMap);
 			
 			Log.done();
 		} else {
@@ -104,198 +146,11 @@ public final class GraphLayout {
 			Log.done();
 		}
 		
-		final var lg = applyHierarchicalGridLayout(g);
+		final var lg = new LayoutGrid(g);
 		
+		lg.layout();
 //		writeSvg(g, "data/graph.svg");
 		writeSvg(lg, "data/graph.svg");
-	}
-	
-	public static final LayoutGrid applyHierarchicalGridLayout(final Graph g) {
-		Log.begin(1, "Appying Hierarchical Grid Layout");
-		Log.outf(2, "Nodes: %s Edges: %s", g.countNodes(), g.countEdges());
-		
-		final var clusters = computeNodeDepth(g);
-		
-		for (final var cluster : clusters.values()) {
-			reorderNodesInEachRow(cluster.rows.values());
-		}
-		
-		computeOffsets(clusters);
-		
-		if (Log.isEnabled(4)) {
-			g.forEach(node -> {
-				Log.outf(0, "%s %s", node.getIndex(), node.getProps());
-			});
-		}
-		
-//		if (Log.isEnabled(3)) {
-//			for (final var ie : inIndexed(clusters.rows.values())) {
-//				Log.outf(0, "%s%s", ie.getIndex(), ie.getElement());
-//			}
-//		}
-		
-		final var lg = new LayoutGrid();
-		
-		{
-			g.forEach(node -> {
-				final var compId = node.getCompId();
-				final var propRow = (int) node.getProps().get(K_ROW);
-				final var propCol = (int) node.getProps().get(K_COL) + clusters.get(compId).getLeft();
-				
-				node.getProps().put(K_COL, propCol);
-				
-				final var rowIdx = 1 + 2 * propRow;
-				final var colIdx = 1 + 2 * propCol;
-				
-				lg.cell(rowIdx, colIdx).setNode(node);
-				lg.cell(rowIdx + 1, colIdx + 1); // east and south borders (north and west already taken care of by rowIdx and colIdx)
-			});
-			
-			clusters.values().forEach(cluster -> {
-				cluster.rows.values().forEach(row -> {
-					for (var i = row.size() - 1; 0 <= i; i -= 1) {
-						final var node = row.get(i);
-						final var currentRow = (int) node.getProps().get(K_ROW);
-						final var currentCol = (int) node.getProps().get(K_COL);
-						final var rowIdx = 1 + 2 * currentRow;
-						final var colIdx = 1 + 2 * currentCol;
-						final var cell = lg.cell(rowIdx, colIdx);
-						var targetCol = (int) computeTargetCol(node);
-						var targetColIdx = 1 + 2 * targetCol;
-						var targetCell = lg.cell(rowIdx, targetColIdx);
-						
-						while (currentCol < targetCol && null != targetCell.getNode()) {
-							targetCol -= 1;
-							targetColIdx = 1 + 2 * targetCol;
-							targetCell = lg.cell(rowIdx, targetColIdx);
-						}
-						
-						if (null == targetCell.getNode()) {
-							Log.out(2, "Moving", node, "from", cell, "to", targetCell);
-							cell.setNode(null);
-							targetCell.setNode(node);
-							node.getProps().put(K_COL, targetCol);
-						}
-					}
-				});
-			});
-			
-			g.forEach(node -> {
-				Log.out(1, node);
-				
-				Log.out(6, node, node.outgoingEdges);
-				
-				final var targets = node.streamOutgoingEdges()
-						.map(Graph.Edge::getEndNode)
-						.collect(Collectors.toCollection(HashSet::new));
-				final var rowIdx = 1 + 2 * (int) node.getProps().get(K_ROW);
-				final var colIdx = 1 + 2 * (int) node.getProps().get(K_COL);
-				final var nodeCell = lg.cell(rowIdx, colIdx);
-				
-				if (targets.remove(node)) {
-					final var path = new LayoutGrid.Path(nodeCell, nodeCell);
-					var pathCell = nodeCell;
-					
-					for (final var pathSide : LayoutGrid.Cell.Side.N_E_S_W) {
-						path.prependWaypoint(pathCell, pathSide);
-						pathCell = lg.neighbor(pathCell, pathSide);
-					}
-				}
-				
-				for (final var target : targets) {
-					final var targetRowIdx = 1 + 2 * (int) target.getProps().get(K_ROW);
-					final var targetColIdx = 1 + 2 * (int) target.getProps().get(K_COL);
-					final var targetCell = lg.cell(targetRowIdx, targetColIdx);
-					
-					Log.out(6, "node:", node, "target:", target);
-					
-					final var path = new LayoutGrid.Path(nodeCell, targetCell);
-					var pathCell = targetCell;
-					
-					while (pathCell != nodeCell) {
-						LayoutGrid.Cell.Side ps = null;
-						LayoutGrid.Cell nextPathCell = null;
-						final var dirR = nodeCell.getRowIdx() - pathCell.getRowIdx();
-						final var dirC = nodeCell.getColIdx() - pathCell.getColIdx();
-						var bestDot = Double.NEGATIVE_INFINITY;
-						
-						for (final var pathSide : LayoutGrid.Cell.Side.N_W_S_E) {
-							final var pathCellNeighbor = lg.neighbor(pathCell, pathSide);
-							var dot = Double.NEGATIVE_INFINITY;
-							
-							if (nodeCell == pathCellNeighbor) {
-								dot = Double.POSITIVE_INFINITY;
-							} else if (null != pathCellNeighbor && null == pathCellNeighbor.getNode()) {
-								dot = dirR * pathSide.dr() + dirC * pathSide.dc();
-							}
-							
-							if (bestDot < dot) {
-								bestDot = dot;
-								ps = pathSide;
-								nextPathCell = pathCellNeighbor;
-							}
-						}
-						
-						path.prependWaypoint(pathCell, ps);
-						pathCell = nextPathCell;
-					}
-					
-					Log.out(6, path, path.waypoints);
-				}
-			});
-		}
-		
-		Log.done();
-		
-		return lg;
-	}
-	
-	private static final double computeTargetCol(final Graph.Node node) {
-		return Stream.concat(
-				node.streamOutgoingEdges().map(Graph.Edge::getEndNode),
-				node.streamIncomingEdges().map(Graph.Edge::getStartNode))
-				.map(Graph.Node::getProps)
-				.mapToDouble(props -> (int) props.get(K_COL))
-				.average().orElse((int) node.getProps().get(K_COL));
-	}
-	
-	private static final void reorderNodesInEachRow(final Iterable<List<Graph.Node>> clusterRows) {
-		for (final var j : IntStream.range(0, 10).toArray()) {
-			clusterRows.forEach(row -> {
-				row.sort((node1, node2) -> {
-					final var node1CompId = node1.getCompId();
-					final var node2CompId = node2.getCompId();
-					
-					final var cmpCompId = Integer.compare(node1CompId, node2CompId);
-					
-					if (0 != cmpCompId) {
-						return cmpCompId;
-					}
-					
-					final var node1TargetCol = computeTargetCol(node1);
-					final var node2TargetCol = computeTargetCol(node2);
-					
-					return Double.compare(node1TargetCol, node2TargetCol);
-				});
-				
-				for (var i = 0; i < row.size(); i += 1) {
-					final var before = (int) row.get(i).getProps().get(K_COL);
-					
-					if (i != before) {
-						row.get(i).getProps().put(K_COL, i);
-					}
-				}
-			});
-		}
-	}
-	
-	private static final void computeOffsets(final Map<Integer, Cluster> clusters) {
-		var nextOffset = 0;
-		
-		for (final var cluster : clusters.values()) {
-			cluster.left = nextOffset;
-			nextOffset += cluster.getWidth();
-		}
 	}
 	
 	public static final void writeSvg(final LayoutGrid grid, final String filePath)
@@ -389,7 +244,7 @@ public final class GraphLayout {
 								
 								xmlElement(svg, "tspan", () -> {
 									svg.writeAttribute("dy", "-0.6em");
-									svg.writeCharacters(node.toString() + " | " + String.format("%.1f", computeTargetCol(node)));
+									svg.writeCharacters(node.toString() + " | " + String.format("%.1f", LayoutGrid.computeTargetCol(node)));
 								});
 								
 								xmlElement(svg, "tspan", () -> {
@@ -487,6 +342,7 @@ public final class GraphLayout {
 		
 	}
 	
+	public static final String K_CLUSTER = "Cluster";
 	public static final String K_DEPTH = "Depth";
 	public static final String K_ROW = "Row";
 	public static final String K_COL = "Col";
@@ -508,58 +364,6 @@ public final class GraphLayout {
 		}
 		
 		return map.get(key);
-	}
-	
-	public static final Map<Integer, Cluster> computeNodeDepth(final Graph g) {
-//		final var result = new TreeMap<Integer, List<Graph.Node>>();
-		final var result = new ArrayList<List<Graph.Node>>();
-		final IntFunction<List<Graph.Node>> getRow = rowIndex -> computeIfAbsent(result, rowIndex);
-		
-		final var roots = g.nodes.stream().filter(Graph.Node::isRoot).toList();
-		
-		Log.outf(2, "Roots: %s", roots.size());
-		
-		final var clusters = new TreeMap<Integer, Cluster>();
-		
-		computeNodeDepth(roots, getRow, clusters);
-		
-		g.forEach(node -> computeNodeDepth(Arrays.asList(node), getRow, clusters));
-		
-//		return result;
-		return clusters;
-	}
-	
-	public static final void computeNodeDepth(final Collection<Graph.Node> nodes, final IntFunction<List<Graph.Node>> getRow, final Map<Integer, Cluster> clusters) {
-		final var todo = new ArrayList<Graph.Node>();
-		
-		final Function<Integer, Consumer<Graph.Node>> applyDepth = d -> node -> {
-			node.getProps().put(K_DEPTH, d);
-			clusters.computeIfAbsent(node.getCompId(), __ -> new Cluster()).add(node);
-			todo.add(node);
-			
-			final var row = getRow.apply(d);
-			node.getProps().put(K_ROW, d);
-			node.getProps().put(K_COL, row.size());
-			row.add(node);
-		};
-		
-		final var applyDepth0 = applyDepth.apply(0);
-		
-		for (final var node : nodes) {
-			if (!node.getProps().containsKey(K_DEPTH)) {
-				applyDepth0.accept(node);
-			}
-		}
-		
-		while (!todo.isEmpty()) {
-			final var n0 = todo.remove(todo.size() - 1);
-			final var d0 = (int) n0.getProps().get(K_DEPTH);
-			
-			n0.streamOutgoingEdges()
-			.map(Graph.Edge::getEndNode)
-			.filter(n -> !n.getProps().containsKey(K_DEPTH))
-			.forEach(applyDepth.apply(d0 + 1));
-		}
 	}
 	
 	/**
@@ -646,12 +450,21 @@ public final class GraphLayout {
 			public final void setParent(final Node parent) {
 				if (null != this.getParent()) {
 					this.getParent().children.remove(this);
+					{
+						final var edge = this.getParent().edgeTo(this, false);
+						
+						if (!edge.isExplicit()) {
+							this.getParent().outgoingEdges.remove(edge);
+							this.incomingEdges.remove(edge);
+						}
+					}
 				}
 				
 				this.parent = parent;
 				
 				if (null != this.getParent()) {
 					this.getParent().children.add(this);
+					this.getParent().edgeTo(this, false);
 				}
 			}
 			
@@ -680,17 +493,27 @@ public final class GraphLayout {
 			}
 			
 			public final Edge edgeTo(final Node edgeEndNode) {
+				return this.edgeTo(edgeEndNode, true);
+			}
+			
+			public final Edge edgeTo(final Node edgeEndNode, final boolean explicit) {
 				edgeEndNode.compId.topWith(this.compId);
 				
-				return this.edgeTo(edgeEndNode, i -> {
-					final var result = new Edge(this, edgeEndNode);
+				final var result = this.edgeTo(edgeEndNode, i -> {
+					final var newEdge = new Edge(this, edgeEndNode);
 					
-					this.outgoingEdges.add(i, result);
+					this.outgoingEdges.add(i, newEdge);
 					
-					edgeEndNode.addIncomingEdge(result);
+					edgeEndNode.addIncomingEdge(newEdge);
 					
-					return result;
+					return newEdge;
 				});
+				
+				if (explicit) {
+					result.setExplicit(true);
+				}
+				
+				return result;
 			}
 			
 			public final int countOutgoingEdges() {
@@ -738,9 +561,9 @@ public final class GraphLayout {
 //				return String.format("%s%s", this.getIndex(), this.getProps());
 //				return String.format("%s", this.getIndex());
 //				return String.format("%s.%s", this.getCompId(), this.getIndex());
-//				return String.format("%s.%s%s", this.getCompId(), this.getIndex(), this.getProps());
+				return String.format("%s.%s%s", this.getCompId(), this.getIndex(), this.getProps());
 //				return String.format("%s.%s@%s_%s", this.getCompId(), this.getIndex(), this.getProps().get(K_ROW), this.getProps().get(K_COL));
-				return String.format("%s.%s@%s_%s", this.getCompId(), this.getIndex(), 1 + 2 * (int) this.getProps().get(K_ROW), 1 + 2 * (int) this.getProps().get(K_COL));
+//				return String.format("%s.%s@%s_%s", this.getCompId(), this.getIndex(), 1 + 2 * (int) this.getProps().get(K_ROW), 1 + 2 * (int) this.getProps().get(K_COL));
 			}
 			
 			private final void addIncomingEdge(final Edge edge) {
@@ -872,6 +695,8 @@ public final class GraphLayout {
 			
 			private final Node endNode;
 			
+			private boolean explicit = false;
+			
 			public Edge(final Node startNode, final Node endNode) {
 				this.startNode = startNode;
 				this.endNode = endNode;
@@ -883,6 +708,14 @@ public final class GraphLayout {
 			
 			public final Node getEndNode() {
 				return this.endNode;
+			}
+			
+			public final boolean isExplicit() {
+				return this.explicit;
+			}
+			
+			public final void setExplicit(final boolean explicit) {
+				this.explicit = explicit;
 			}
 			
 			public final int getStartNodeIndex() {
@@ -908,7 +741,29 @@ public final class GraphLayout {
 	 */
 	public static final class LayoutGrid {
 		
+		private final Graph graph;
+		
 		private final List<List<Cell>> rows = new ArrayList<>();
+		
+		private final NavigableMap<Integer, Cluster> compClusters = new TreeMap<>();
+		
+		public LayoutGrid(final Graph graph) {
+			this.graph = graph;
+		}
+		
+		public final Graph getGraph() {
+			return this.graph;
+		}
+		
+		public final Cluster clusterForNode(final Graph.Node node) {
+			final var nodeParent = node.getParent();
+			
+			if (null == nodeParent) {
+				return this.compClusters.computeIfAbsent(node.getCompId(), __ -> new Cluster());
+			}
+			
+			return (Cluster) nodeParent.getProps().computeIfAbsent(K_CLUSTER, __ -> new Cluster());
+		}
 		
 		public final int countRows() {
 			return this.rows.size();
@@ -1004,6 +859,243 @@ public final class GraphLayout {
 			return result;
 		}
 		
+		public final Map<Integer, Cluster> computeNodeDepth() {
+			final var roots = this.getGraph().nodes.stream().filter(Graph.Node::isRoot).toList();
+			
+			Log.outf(2, "Roots: %s", roots.size());
+			
+			this.computeNodeDepth(roots);
+			
+			this.getGraph().forEach(node -> this.computeNodeDepth(Arrays.asList(node)));
+			
+			return this.compClusters;
+		}
+		
+		private final void computeNodeDepth(final Collection<Graph.Node> nodes) {
+			final var todo = new ArrayList<Graph.Node>();
+			
+			final Function<Integer, Consumer<Graph.Node>> applyDepth = d -> node -> {
+				node.getProps().put(K_DEPTH, d);
+				this.clusterForNode(node).add(node);
+				todo.add(node);
+			};
+			
+			final var applyDepth0 = applyDepth.apply(0);
+			
+			for (final var node : nodes) {
+				if (!node.getProps().containsKey(K_DEPTH)) {
+					applyDepth0.accept(node);
+				}
+			}
+			
+			while (!todo.isEmpty()) {
+				final var n0 = todo.remove(todo.size() - 1);
+				final var d0 = (int) n0.getProps().get(K_DEPTH);
+				
+//				n0.streamOutgoingEdges()
+//				.filter(Graph.Edge::isExplicit)
+//				.map(Graph.Edge::getEndNode)
+//				.filter(n -> !n.getProps().containsKey(K_DEPTH))
+//				.forEach(applyDepth.apply(d0 + 1));
+				
+				n0.streamOutgoingEdges()
+//				.filter(Graph.Edge::isExplicit)
+				.map(Graph.Edge::getEndNode)
+				.filter(n -> !n.getProps().containsKey(K_DEPTH))
+				.forEach(applyDepth.apply(d0 + 1));
+			}
+		}
+		
+		public final void layout() {
+			Log.begin(1, "Appying Hierarchical Grid Layout");
+			Log.outf(2, "Nodes: %s Edges: %s", this.getGraph().countNodes(), this.getGraph().countEdges());
+			
+			final var clusters = this.computeNodeDepth();
+			
+			for (final var cluster : clusters.values()) {
+				LayoutGrid.reorderNodesInEachRow(cluster.rows.values());
+			}
+			
+			LayoutGrid.computeOffsets(clusters);
+			
+			this.initCells(clusters);
+			
+			this.adjustNodeCells(clusters);
+			
+			this.buildPaths();
+			
+			Log.done();
+		}
+		
+		private final void buildPaths() {
+			this.getGraph().forEach(node -> {
+				Log.out(1, node);
+				
+				Log.out(6, node, node.outgoingEdges);
+				
+				final var targets = node.streamOutgoingEdges()
+						.map(GraphLayout.Graph.Edge::getEndNode)
+						.collect(Collectors.toCollection(HashSet::new));
+				final var rowIdx = 1 + 2 * (int) node.getProps().get(GraphLayout.K_ROW);
+				final var colIdx = 1 + 2 * (int) node.getProps().get(GraphLayout.K_COL);
+				final var nodeCell = this.cell(rowIdx, colIdx);
+				
+				if (targets.remove(node)) {
+					this.buildPath1(nodeCell);
+				}
+				
+				for (final var target : targets) {
+					final var targetRowIdx = 1 + 2 * (int) target.getProps().get(GraphLayout.K_ROW);
+					final var targetColIdx = 1 + 2 * (int) target.getProps().get(GraphLayout.K_COL);
+					final var targetCell = this.cell(targetRowIdx, targetColIdx);
+					
+					Log.out(6, "node:", node, "target:", target);
+					
+					this.buildPath2(nodeCell, targetCell);
+				}
+			});
+		}
+		
+		public void buildPath1(final Cell nodeCell) {
+			final var path = new Path(nodeCell, nodeCell);
+			var pathCell = nodeCell;
+			
+			for (final var pathSide : Cell.Side.N_E_S_W) {
+				path.prependWaypoint(pathCell, pathSide);
+				pathCell = this.neighbor(pathCell, pathSide);
+			}
+		}
+		
+		private final void buildPath2(final Cell nodeCell, final Cell targetCell) {
+			final var path = new Path(nodeCell, targetCell);
+			var pathCell = targetCell;
+			
+			while (pathCell != nodeCell) {
+				Cell.Side pathSide = null;
+				Cell nextPathCell = null;
+				final var dirR = nodeCell.getRowIdx() - pathCell.getRowIdx();
+				final var dirC = nodeCell.getColIdx() - pathCell.getColIdx();
+				var bestDot = Double.NEGATIVE_INFINITY;
+				
+				for (final var candidatePathSide : Cell.Side.N_W_S_E) {
+					final var pathCellNeighbor = this.neighbor(pathCell, candidatePathSide);
+					var dot = Double.NEGATIVE_INFINITY;
+					
+					if (nodeCell == pathCellNeighbor) {
+						dot = Double.POSITIVE_INFINITY;
+					} else if (null != pathCellNeighbor && null == pathCellNeighbor.getNode()) {
+						dot = dirR * candidatePathSide.dr() + dirC * candidatePathSide.dc();
+					}
+					
+					if (bestDot < dot) {
+						bestDot = dot;
+						pathSide = candidatePathSide;
+						nextPathCell = pathCellNeighbor;
+					}
+				}
+				
+				path.prependWaypoint(pathCell, pathSide);
+				pathCell = nextPathCell;
+			}
+			
+			Log.out(6, path, path.waypoints);
+		}
+		
+		private final void initCells(final Map<Integer, Cluster> clusters) {
+			this.getGraph().forEach(node -> {
+				final var compId = node.getCompId();
+				final var propRow = (int) node.getProps().get(GraphLayout.K_ROW);
+				final var propCol = (int) node.getProps().get(GraphLayout.K_COL) + clusters.get(compId).getLeft();
+				
+				node.getProps().put(GraphLayout.K_COL, propCol);
+				
+				final var rowIdx = 1 + 2 * propRow;
+				final var colIdx = 1 + 2 * propCol;
+				
+				this.cell(rowIdx, colIdx).setNode(node);
+				this.cell(rowIdx + 1, colIdx + 1); // east and south borders (north and west already taken care of by rowIdx and colIdx)
+			});
+		}
+		
+		private final void adjustNodeCells(final Map<Integer, Cluster> clusters) {
+			clusters.values().forEach(cluster -> {
+				cluster.rows.values().forEach(row -> {
+					for (var i = row.size() - 1; 0 <= i; i -= 1) {
+						final var node = row.get(i);
+						final var currentRow = (int) node.getProps().get(GraphLayout.K_ROW);
+						final var currentCol = (int) node.getProps().get(GraphLayout.K_COL);
+						final var rowIdx = 1 + 2 * currentRow;
+						final var colIdx = 1 + 2 * currentCol;
+						final var cell = this.cell(rowIdx, colIdx);
+						var targetCol = (int) LayoutGrid.computeTargetCol(node);
+						var targetColIdx = 1 + 2 * targetCol;
+						var targetCell = this.cell(rowIdx, targetColIdx);
+						
+						while (currentCol < targetCol && null != targetCell.getNode()) {
+							targetCol -= 1;
+							targetColIdx = 1 + 2 * targetCol;
+							targetCell = this.cell(rowIdx, targetColIdx);
+						}
+						
+						if (null == targetCell.getNode()) {
+							Log.out(2, "Moving", node, "from", cell, "to", targetCell);
+							cell.setNode(null);
+							targetCell.setNode(node);
+							node.getProps().put(GraphLayout.K_COL, targetCol);
+						}
+					}
+				});
+			});
+		}
+
+		private static final void computeOffsets(final Map<Integer, Cluster> clusters) {
+			var nextOffset = 0;
+			
+			for (final var cluster : clusters.values()) {
+				cluster.left = nextOffset;
+				nextOffset += cluster.getWidth();
+			}
+		}
+
+		private static final void reorderNodesInEachRow(final Iterable<List<Graph.Node>> clusterRows) {
+			for (final var j : IntStream.range(0, 10).toArray()) {
+				clusterRows.forEach(row -> {
+					row.sort((node1, node2) -> {
+						final var node1CompId = node1.getCompId();
+						final var node2CompId = node2.getCompId();
+						
+						final var cmpCompId = Integer.compare(node1CompId, node2CompId);
+						
+						if (0 != cmpCompId) {
+							return cmpCompId;
+						}
+						
+						final var node1TargetCol = GraphLayout.LayoutGrid.computeTargetCol(node1);
+						final var node2TargetCol = GraphLayout.LayoutGrid.computeTargetCol(node2);
+						
+						return Double.compare(node1TargetCol, node2TargetCol);
+					});
+					
+					for (var i = 0; i < row.size(); i += 1) {
+						final var before = (int) row.get(i).getProps().get(GraphLayout.K_COL);
+						
+						if (i != before) {
+							row.get(i).getProps().put(GraphLayout.K_COL, i);
+						}
+					}
+				});
+			}
+		}
+
+		private static final double computeTargetCol(final Graph.Node node) {
+			return Stream.concat(
+					node.streamOutgoingEdges().map(Graph.Edge::getEndNode),
+					node.streamIncomingEdges().map(Graph.Edge::getStartNode))
+					.map(Graph.Node::getProps)
+					.mapToDouble(props -> (int) props.get(K_COL))
+					.average().orElse((int) node.getProps().get(K_COL));
+		}
+
 		/**
 		 * @author 2oLDNncs 20250415
 		 */
@@ -1375,6 +1467,8 @@ public final class GraphLayout {
 		
 		private int height;
 		
+		private int weight;
+		
 		private final NavigableMap<Integer, List<Graph.Node>> rows = new TreeMap<>();
 		
 		public final int getTop() {
@@ -1393,20 +1487,27 @@ public final class GraphLayout {
 			return this.height;
 		}
 		
+		public final int getWeight() {
+			return this.weight;
+		}
+		
 		public final void add(final Graph.Node node) {
 			final var row = computeIfAbsent(this.rows, Helpers.cast(node.getProps().get(K_DEPTH)));
 			
+			node.getProps().put(K_COL, row.size());
+			node.getProps().put(K_ROW, node.getProps().get(K_DEPTH));
 			row.add(node);
 			
 			this.width = Math.max(this.getWidth(), row.size());
 			this.top = this.rows.firstKey();
 			this.height = 1 + this.rows.lastKey() - this.getTop();
+			this.weight += 1;
 		}
 		
 		@Override
 		public final String toString() {
-			return String.format("{left: %s, top: %s, width: %s, height: %s}",
-					this.getLeft(), this.getTop(), this.getWidth(), getHeight());
+			return String.format("(@%s,%s %sx%s %s)",
+					this.getLeft(), this.getTop(), this.getWidth(), getHeight(), this.getWeight());
 		}
 		
 	}
