@@ -13,13 +13,13 @@ import javax.xml.stream.XMLStreamWriter;
  */
 public final class MyXMLStreamWriter implements XMLStreamWriter {
 	
-	private final PrintStream svgOut;
+	private final PrintStream out;
 	
 	private final XMLStreamWriter delegate;
 	
-	public MyXMLStreamWriter(final PrintStream svgOut) throws XMLStreamException, FactoryConfigurationError {
-		this.svgOut = svgOut;
-		this.delegate = XMLOutputFactory.newFactory().createXMLStreamWriter(this.svgOut);
+	public MyXMLStreamWriter(final PrintStream out) throws XMLStreamException, FactoryConfigurationError {
+		this.out = out;
+		this.delegate = XMLOutputFactory.newFactory().createXMLStreamWriter(this.out);
 	}
 	
 	@Override
@@ -189,7 +189,7 @@ public final class MyXMLStreamWriter implements XMLStreamWriter {
 		Chrono.tic();
 //			delegate is way too slow for this method (about 700 000 times slower! WTF)
 //			this.delegate.writeAttribute(localName, value);
-		this.svgOut.print(String.format(" %s=\"%s\"", localName, escape(value)));
+		this.out.print(String.format(" %s=\"%s\"", localName, escape(value)));
 		Chrono.toc("writeAttribute-3");
 	}
 	
