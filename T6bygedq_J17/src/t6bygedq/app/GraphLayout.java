@@ -20,7 +20,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.NavigableMap;
 import java.util.Objects;
-import java.util.Random;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.function.BiConsumer;
@@ -55,34 +54,10 @@ public final class GraphLayout {
 	public static final void main(final String... args) throws IOException, XMLStreamException {
 		final var g = new Graph();
 		
-		if (true) {
-			Log.begin(1, "Creating graph");
-			
-			final var nbNodes = 40;
-			final var nbEdges = nbNodes * nbNodes * 64 / 2048;
-			final var rand = new Random(nbNodes);
-			
-			IntStream.range(0, nbNodes).forEach(__ -> g.addNode());
-			
-			{
-				final var allPossibleEdges = IntStream.range(0, nbNodes * nbNodes)
-						.mapToObj(Integer::valueOf)
-						.collect(Helpers.toList());
-				
-				Collections.shuffle(allPossibleEdges, rand);
-				
-				allPossibleEdges.subList(0, nbEdges).forEach(e -> {
-					final var src = g.getNode(e / nbNodes);
-					final var dst = g.getNode(e % nbNodes);
-					src.edgeTo(dst);
-				});
-			}
-			
-			Log.done();
-		} else if (true) {
+		{
 			final var ap = new ArgsParser(args);
 			
-			ap.setDefault(ARG_IN, "data/test_clusterarcs.txt");
+			ap.setDefault(ARG_IN, "data/test_clusterarcs2.txt");
 			
 			Log.beginf(1, "Loading %s", ap.getPath(ARG_IN));
 			
@@ -104,45 +79,23 @@ public final class GraphLayout {
 			};
 			
 			Files.lines(ap.getPath(ARG_IN)).forEach(line -> {
-				final var elements = line.split("\t");
+				final var elements = line.split("\t", -1);
 				final var n = elements.length / 2;
 				final var node1Path = Arrays.asList(Arrays.copyOfRange(elements, 0, n));
 				final var node2Path = Arrays.asList(Arrays.copyOfRange(elements, n, elements.length));
 				
 				buildClusters.accept(node1Path);
-				buildClusters.accept(node2Path);
-				
 				final var start = nodeMap.computeIfAbsent(node1Path, makeNode);
-				final var end = nodeMap.computeIfAbsent(node2Path, makeNode);
 				
-				start.edgeTo(end);
+				if (!String.join("", node2Path).isEmpty()) {
+					buildClusters.accept(node2Path);
+					final var end = nodeMap.computeIfAbsent(node2Path, makeNode);
+					
+					start.edgeTo(end);
+				}
 			});
 			
 			Log.out(1, nodeMap);
-			
-			Log.done();
-		} else {
-			final var ap = new ArgsParser(args);
-			
-			ap.setDefault(ARG_IN, "data/test_arcs.txt");
-			
-			Log.beginf(1, "Loading %s", ap.getPath(ARG_IN));
-			
-			final var nodeMap = new HashMap<String, Graph.Node>();
-			final Function<? super String, ? extends Graph.Node> makeNode = lbl -> {
-				final var result = g.addNode();
-				
-				result.getProps().put(Graph.K_LABEL, lbl);
-				
-				return result;
-			};
-			
-			Files.lines(ap.getPath(ARG_IN)).forEach(line -> {
-				final var elements = line.split("\t");
-				final var start = nodeMap.computeIfAbsent(elements[0], makeNode);
-				final var end = nodeMap.computeIfAbsent(elements[1], makeNode);
-				start.edgeTo(end);
-			});
 			
 			Log.done();
 		}
@@ -222,6 +175,30 @@ public final class GraphLayout {
 							final var cellY = cellHeight * cell.getRowIdx();
 							final var centerX = cellX + cellWidth / 2;
 							final var centerY = cellY + cellHeight / 2;
+							
+							{
+								final var nodeCluster = (Cluster) node.getProps().get(K_CLUSTER);
+								
+								if (1 < nodeCluster.getHeight() || 1 < nodeCluster.getWeight()) {
+									final var clusterX = cellWidth * (0.5 + 2 * nodeCluster.getLeft());
+									final var clusterY = cellHeight * (0.5 + 2 * nodeCluster.getTop());
+									final var clusterWidth = cellWidth * (2 * nodeCluster.getWidth());
+									final var clusterHeight = cellHeight * (2 * nodeCluster.getHeight());
+									Log.out(1, node.getProps().get(K_CLUSTER), clusterX, clusterY, clusterWidth, clusterHeight);
+									xmlElement(svg, "rect", () -> {
+										svg.writeAttribute("fill", "none");
+										svg.writeAttribute("stroke", "black");
+										svg.writeAttribute("stroke-width", "0.25");
+										svg.writeAttribute("x", "" + clusterX);
+										svg.writeAttribute("y", "" + clusterY);
+										svg.writeAttribute("width", "" + clusterWidth);
+										svg.writeAttribute("height", "" + clusterHeight);
+										svg.writeAttribute("rx", "" + minCellDim / 4);
+										svg.writeAttribute("ry", "" + minCellDim / 4);
+										svg.writeAttribute("style", "");
+									});
+								}
+							}
 							
 							xmlElement(svg, "rect", () -> {
 								svg.writeAttribute("fill", "none");
