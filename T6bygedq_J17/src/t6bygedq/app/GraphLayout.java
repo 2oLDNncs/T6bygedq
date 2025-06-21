@@ -71,7 +71,7 @@ public final class GraphLayout {
 	public static final List<String> blank(final List<String> src, final int i) {
 		final var result = new ArrayList<>(src);
 		
-		Collections.fill(result.subList(i, result.size()), "");
+		Collections.fill(result.subList(i, result.size()), "0");
 		
 		return result;
 	}
@@ -93,7 +93,7 @@ public final class GraphLayout {
 				final var child = nodeMap.computeIfAbsent(blank(nodePath, i), makeNode);
 				
 				if (parent != child) {
-					Log.out(6, parent, blank(nodePath, i - 1), "->", child, blank(nodePath, i));
+					Log.out(4, parent, blank(nodePath, i - 1), "->", child, blank(nodePath, i));
 					child.setParent(parent);
 				}
 			}
@@ -112,6 +112,7 @@ public final class GraphLayout {
 				buildClusters.accept(node2Path);
 				final var end = nodeMap.computeIfAbsent(node2Path, makeNode);
 				
+				Log.out(4, start, node1Path, "->", end, node2Path);
 				start.edgeTo(end);
 			}
 		});
@@ -992,23 +993,24 @@ public final class GraphLayout {
 					if (done.contains(node)) {
 						todo.remove(0);
 						final var rect = getRect(node);
-						
-						final Consumer<Graph.Node>[] updateChildRect = cast(new Consumer[1]);
 						final var minChildTop = new int[] { Integer.MAX_VALUE };
+						final var maxChildBottom = new int[] { Integer.MIN_VALUE };
+						final Consumer<Graph.Node>[] updateChildRect = cast(new Consumer[1]);
 						updateChildRect[0] = child -> {
 							final var childRect = getRect(child);
 							minChildTop[0] = Math.min(minChildTop[0], childRect.y);
-							rect.add(childRect);
+							maxChildBottom[0] = Math.max(maxChildBottom[0], childRect.y + childRect.width);
 							child.forEachChild(updateChildRect[0]);
 						};
 						
 						node.forEachChild(updateChildRect[0]);
 						
-						if (minChildTop[0] < Integer.MAX_VALUE) {
-							final var dy = minChildTop[0] - 1 - rect.y;
-							rect.y += dy;
-							rect.height -= dy;
+						if (minChildTop[0] < maxChildBottom[0]) {
+							rect.y = minChildTop[0] - 1;
+							rect.height = maxChildBottom[0] - rect.y;
 						}
+						
+						Log.out(4, node, rect);
 					} else {
 						final var rect = getRect(node);
 						final var row = (Integer) node.getProps().get(K_DEPTH);
@@ -1034,28 +1036,16 @@ public final class GraphLayout {
 					
 					if (done.contains(node)) {
 						todo.remove(0);
+						
 						final var rect = getRect(node);
-						final var lefts = new HashMap<Integer, Integer>();
-						
-						for (final var child : node.children) {
+						final Consumer<Graph.Node>[] updateRect = cast(new Consumer[1]);
+						updateRect[0] = child -> {
 							final var childRect = getRect(child);
-							for (var y = childRect.y; y < childRect.y + childRect.height; y += 1) {
-								lefts.compute(y, (__, v) -> Math.min(null == v ? Integer.MAX_VALUE : v, childRect.x));
-							}
-						}
-						
-						final var offsetX = lefts.values().stream().max(Integer::compare).orElse(0)
-								- lefts.values().stream().min(Integer::compare).orElse(0);
-						
-						final Consumer<Graph.Node>[] updateChildRect = cast(new Consumer[1]);
-						updateChildRect[0] = child -> {
-							final var childRect = getRect(child);
-							childRect.x += offsetX;
 							rect.add(childRect);
-							child.forEachChild(updateChildRect[0]);
+							child.forEachChild(updateRect[0]);
 						};
 						
-						node.forEachChild(updateChildRect[0]);
+						node.forEachChild(updateRect[0]);
 						
 						{
 							final var right = rect.x + rect.width - 1;
@@ -1065,7 +1055,7 @@ public final class GraphLayout {
 							}
 						}
 						
-						Log.out(6, node, rect, rowSize);
+						Log.out(4, node, rect, rowSize);
 					} else {
 						final var rect = getRect(node);
 						var minX = 0;
@@ -1080,7 +1070,7 @@ public final class GraphLayout {
 						
 						rect.x = rowSize.compute(rect.y, (__, v) -> null == v ? 0 : 1 + v);
 						
-						Log.out(6, node, rect);
+						Log.out(4, node, rect);
 						
 						todo.addAll(0, node.children);
 						done.add(node);
@@ -1166,7 +1156,7 @@ public final class GraphLayout {
 		
 		private final void buildPaths() {
 			this.getGraph().forEach(node -> {
-				Log.out(1, node);
+				Log.out(1, "Building paths for node:", node);
 				
 				Log.out(6, node, node.outgoingEdges);
 				
