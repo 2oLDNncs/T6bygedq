@@ -1,7 +1,7 @@
 package t6bygedq.app;
 
+import static t6bygedq.lib.Helpers.cast;
 import static t6bygedq.lib.Helpers.in;
-import static t6bygedq.lib.Helpers.inIndexed;
 
 import java.awt.Rectangle;
 import java.awt.geom.Point2D;
@@ -18,7 +18,6 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.NavigableMap;
 import java.util.Objects;
 import java.util.Set;
 import java.util.TreeMap;
@@ -28,9 +27,7 @@ import java.util.function.Function;
 import java.util.function.IntFunction;
 import java.util.function.ToIntFunction;
 import java.util.stream.Collectors;
-import java.util.stream.IntStream;
 import java.util.stream.Stream;
-import java.util.stream.StreamSupport;
 
 import javax.xml.stream.FactoryConfigurationError;
 import javax.xml.stream.XMLStreamException;
@@ -50,61 +47,65 @@ import t6bygedq.lib.MyXMLStreamWriter;
 public final class GraphLayout {
 	
 	public static final String ARG_IN = "-In";
+	public static final String ARG_OUT = "-Out";
 	
 	public static final void main(final String... args) throws IOException, XMLStreamException {
-		final var g = new Graph();
+		final var ap = new ArgsParser(args);
 		
-		{
-			final var ap = new ArgsParser(args);
-			
-			ap.setDefault(ARG_IN, "data/test_clusterarcs2.txt");
-			
-			Log.beginf(1, "Loading %s", ap.getPath(ARG_IN));
-			
-			final var nodeMap = new HashMap<List<String>, Graph.Node>();
-			final Function<? super List<String>, ? extends Graph.Node> makeNode = lbl -> {
-				final var result = g.addNode();
-				
-				result.getProps().put(Graph.K_LABEL, Helpers.last(lbl));
-				
-				return result;
-			};
-			final Consumer<List<String>> buildClusters = nodePath -> {
-				for (var i = 2; i <= nodePath.size(); i += 1) {
-					final var parent = nodeMap.computeIfAbsent(nodePath.subList(0, i - 1), makeNode);
-					final var child = nodeMap.computeIfAbsent(nodePath.subList(0, i), makeNode);
-					
-					child.setParent(parent);
-				}
-			};
-			
-			Files.lines(ap.getPath(ARG_IN)).forEach(line -> {
-				final var elements = line.split("\t", -1);
-				final var n = elements.length / 2;
-				final var node1Path = Arrays.asList(Arrays.copyOfRange(elements, 0, n));
-				final var node2Path = Arrays.asList(Arrays.copyOfRange(elements, n, elements.length));
-				
-				buildClusters.accept(node1Path);
-				final var start = nodeMap.computeIfAbsent(node1Path, makeNode);
-				
-				if (!String.join("", node2Path).isEmpty()) {
-					buildClusters.accept(node2Path);
-					final var end = nodeMap.computeIfAbsent(node2Path, makeNode);
-					
-					start.edgeTo(end);
-				}
-			});
-			
-			Log.out(1, nodeMap);
-			
-			Log.done();
-		}
+		ap.setDefault(ARG_IN, "data/test_clusterarcs2.txt");
+		ap.setDefault(ARG_OUT, "data/graph.svg");
+		
+		Log.beginf(1, "Loading %s", ap.getPath(ARG_IN));
+		
+		final var g = parseArcs(Files.lines(ap.getPath(ARG_IN)));
+		
+		Log.done();
 		
 		final var lg = new LayoutGrid(g);
 		
 		lg.layout();
-//		writeSvg(g, "data/graph.svg");
-		writeSvg(lg, "data/graph.svg");
+		
+		writeSvg(lg, ap.getString(ARG_OUT));
+	}
+	
+	public static final Graph parseArcs(final Stream<String> lines) {
+		final Graph g = new Graph();
+		
+		final var nodeMap = new HashMap<List<String>, Graph.Node>();
+		final Function<? super List<String>, ? extends Graph.Node> makeNode = lbl -> {
+			final var result = g.addNode();
+			
+			result.getProps().put(Graph.K_LABEL, Helpers.last(lbl));
+			
+			return result;
+		};
+		final Consumer<List<String>> buildClusters = nodePath -> {
+			for (var i = 2; i <= nodePath.size(); i += 1) {
+				final var parent = nodeMap.computeIfAbsent(nodePath.subList(0, i - 1), makeNode);
+				final var child = nodeMap.computeIfAbsent(nodePath.subList(0, i), makeNode);
+				
+				child.setParent(parent);
+			}
+		};
+		
+		lines.forEach(line -> {
+			final var elements = line.split("\t", -1);
+			final var n = elements.length / 2;
+			final var node1Path = Arrays.asList(Arrays.copyOfRange(elements, 0, n));
+			final var node2Path = Arrays.asList(Arrays.copyOfRange(elements, n, elements.length));
+			
+			buildClusters.accept(node1Path);
+			final var start = nodeMap.computeIfAbsent(node1Path, makeNode);
+			
+			if (!String.join("", node2Path).isEmpty()) {
+				buildClusters.accept(node2Path);
+				final var end = nodeMap.computeIfAbsent(node2Path, makeNode);
+				
+				start.edgeTo(end);
+			}
+		});
+		
+		return g;
 	}
 	
 	public static final void writeSvg(final LayoutGrid grid, final String filePath)
@@ -177,14 +178,14 @@ public final class GraphLayout {
 							final var centerY = cellY + cellHeight / 2;
 							
 							{
-								final var nodeCluster = (Cluster) node.getProps().get(K_CLUSTER);
-								
-								if (1 < nodeCluster.getHeight() || 1 < nodeCluster.getWeight()) {
-									final var clusterX = cellWidth * (0.5 + 2 * nodeCluster.getLeft());
-									final var clusterY = cellHeight * (0.5 + 2 * nodeCluster.getTop());
-									final var clusterWidth = cellWidth * (2 * nodeCluster.getWidth());
-									final var clusterHeight = cellHeight * (2 * nodeCluster.getHeight());
-									Log.out(1, node.getProps().get(K_CLUSTER), clusterX, clusterY, clusterWidth, clusterHeight);
+								if (1 < node.getClusterWeight()) {
+									final var clusterRect = getRect(node);
+									final var clusterX = cellWidth * (0.5 + 2 * clusterRect.x);
+									final var clusterY = cellHeight * (0.5 + 2 * clusterRect.y);
+									final var clusterWidth = cellWidth * (2 * clusterRect.width);
+									final var clusterHeight = cellHeight * (2 * clusterRect.height);
+									Log.out(1, node, clusterRect);
+									
 									xmlElement(svg, "rect", () -> {
 										svg.writeAttribute("fill", "none");
 										svg.writeAttribute("stroke", "black");
@@ -222,7 +223,7 @@ public final class GraphLayout {
 								
 								xmlElement(svg, "tspan", () -> {
 									svg.writeAttribute("dy", "-0.6em");
-									svg.writeCharacters(node.toString() + " | " + String.format("%.1f", LayoutGrid.computeTargetCol(node)));
+									svg.writeCharacters(node.toString());
 								});
 								
 								xmlElement(svg, "tspan", () -> {
@@ -321,13 +322,16 @@ public final class GraphLayout {
 	}
 	
 	public static final String K_CLUSTER = "Cluster";
+	public static final String K_CLUSTER_RECT = "ClusterRect";
 	public static final String K_DEPTH = "Depth";
 	public static final String K_DEPTH_EXPLICIT = "DepthExplicit";
-	public static final String K_ROW = "Row";
-	public static final String K_COL = "Col";
 	public static final String K_GRID_PATH = "GridPath";
 	public static final String K_GRID_SEGMENTS = "GridSegments";
 	public static final String K_GRID_WALLS = "GridWalls";
+	
+	public static final Rectangle getRect(final Graph.Node node) {
+		return cast(node.getProps().computeIfAbsent(K_CLUSTER_RECT, __ -> new Rectangle()));
+	}
 	
 	public static final <K, E> List<E> computeIfAbsent(final Map<K, List<E>> map, final K key) {
 		return map.computeIfAbsent(key, __ -> new ArrayList<>());
@@ -405,7 +409,7 @@ public final class GraphLayout {
 			final var result = new ArrayList<Node>();
 			
 			this.nodes.stream()
-			.filter(Node::isTreeRoot)
+			.filter(Node::isClusterRoot)
 			.forEach(result::add);
 			
 			return result;
@@ -426,57 +430,44 @@ public final class GraphLayout {
 		public static final String K_LABEL = "Label";
 		
 		/**
-		 * @author 2oLDNncs 20250402
+		 * @author 2oLDNncs 20250619
 		 */
-		public static final class Node extends Obj {
+		public static abstract class Clust extends Obj {
 			
-			private final int index;
+			private Clust parent;
 			
-			private final List<Edge> incomingEdges = new ArrayList<>();
+			final List<Node> children = new ArrayList<>();
 			
-			private final List<Edge> outgoingEdges = new ArrayList<>();
+			private int clusterDepth = -1;
 			
-			private Node parent;
+			private int clusterHeight = -1;
 			
-			private final List<Node> children = new ArrayList<>();
+			private int clusterWeight = -1;
 			
-			private final CompId compId = new CompId();
-			
-			public Node(final int index) {
-				this.index = index;
-			}
-			
-			public final int getIndex() {
-				return this.index;
-			}
-			
-			public final int getCompId() {
-				return this.compId.getVal();
-			}
-			
-			public final Node getParent() {
+			public final Clust getParent() {
 				return this.parent;
 			}
 			
-			public final void setParent(final Node parent) {
-				if (null != this.getParent()) {
-					this.getParent().children.remove(this);
-					{
-						final var edge = this.getParent().edgeTo(this, false);
-						
-						if (!edge.isExplicit()) {
-							this.getParent().outgoingEdges.remove(edge);
-							this.incomingEdges.remove(edge);
-						}
+			public final void setParent(final Clust parent) {
+				if (this.getParent() != parent) {
+					if (null != this.getParent()) {
+						this.removeFromParent(this.getParent());
+					}
+					
+					this.parent = parent;
+					
+					if (null != this.getParent()) {
+						this.addToParent(this.getParent());
 					}
 				}
-				
-				this.parent = parent;
-				
-				if (null != this.getParent()) {
-					this.getParent().children.add(this);
-					this.getParent().edgeTo(this, false);
-				}
+			}
+			
+			protected void removeFromParent(final Clust parent) {
+				parent.children.remove(this);
+			}
+			
+			protected void addToParent(final Clust parent) {
+				parent.children.add((Node) this);
 			}
 			
 			public final int countChildren() {
@@ -495,20 +486,119 @@ public final class GraphLayout {
 				this.children.forEach(action);
 			}
 			
+			public final int getClusterDepth() {
+				if (this.clusterDepth < 0) {
+					if (this.isClusterRoot()) {
+						this.clusterDepth = 0;
+					} else {
+						this.clusterDepth = 1 + this.getParent().getClusterDepth();
+					}
+				}
+				
+				return this.clusterDepth;
+			}
+			
+			public final int getClusterHeight() {
+				if (this.clusterHeight < 0) {
+					this.clusterHeight = 1 +
+							this.streamChildren()
+							.mapToInt(Clust::getClusterHeight)
+							.max().orElse(-1);
+				}
+				
+				return this.clusterHeight;
+			}
+			
+			public final int getClusterWeight() {
+				if (this.clusterWeight < 0) {
+					this.clusterWeight = 1 +
+							this.streamChildren()
+							.mapToInt(Clust::getClusterWeight)
+							.sum();
+				}
+				
+				return this.clusterWeight;
+			}
+			
+			public final boolean isClusterRoot() {
+				return null == this.getParent();
+			}
+			
+			public final boolean isClusterLeaf() {
+				return 0 == this.countChildren();
+			}
+			
+		}
+		
+		/**
+		 * @author 2oLDNncs 20250619
+		 */
+		public static final class Comp extends Clust {
+			
+		}
+		
+		/**
+		 * @author 2oLDNncs 20250402
+		 */
+		public static final class Node extends Clust {
+			
+			private final int index;
+			
+			private final List<Edge> incomingEdges = new ArrayList<>();
+			
+			private final List<Edge> outgoingEdges = new ArrayList<>();
+			
+			private final CompId compId = new CompId();
+			
+			public Node(final int index) {
+				this.index = index;
+			}
+			
+			public final int getIndex() {
+				return this.index;
+			}
+			
+			public final int getCompId() {
+				return this.compId.getVal();
+			}
+			
+			public final Node getParentNode() {
+				return Helpers.castOrNull(Node.class, this.getParent());
+			}
+			
+			@Override
+			protected final void removeFromParent(final Clust parent) {
+				super.removeFromParent(parent);
+				
+				final var parentNode = this.getParentNode();
+				
+				if (null != parentNode) {
+					final var edge = parentNode.edgeTo(this, false);
+					
+					if (!edge.isExplicit()) {
+						parentNode.outgoingEdges.remove(edge);
+						this.incomingEdges.remove(edge);
+					}
+				}
+			}
+			
+			@Override
+			protected final void addToParent(final Clust parent) {
+				super.addToParent(parent);
+				
+				final var parentNode = this.getParentNode();
+				
+				if (null != parentNode) {
+					parentNode.edgeTo(this, false);
+				}
+			}
+			
 			public final boolean isGraphRoot() {
 				return this.incomingEdges.isEmpty();
 			}
 			
 			public final boolean isGraphLeaf() {
 				return this.outgoingEdges.isEmpty();
-			}
-			
-			public final boolean isTreeRoot() {
-				return null == this.getParent();
-			}
-			
-			public final boolean isTreeLeaf() {
-				return 0 == this.countChildren();
 			}
 			
 			public final Edge edgeTo(final Node edgeEndNode) {
@@ -635,33 +725,28 @@ public final class GraphLayout {
 			}
 			
 			/**
-			 * @author 2oLDNncs 20250418
+			 * @author 2oLDNncs 20250619
 			 */
-			private static final class CompId {
+			public static abstract class Aggregator {
 				
-				private final int val = ++lastVal;
+				private Aggregator top;
 				
-				private CompId top;
-				
-				public final int getVal() {
-					return this.top().val;
-				}
-				
-				public final void topWith(final CompId repl) {
+				public final void topWith(final Aggregator repl) {
 					final var thisTop = this.top();
 					final var replTop = repl.top();
 					
 					if (thisTop != replTop) {
+						final var oldTop = thisTop.top;
 						thisTop.top = replTop;
+						replTop.replacing(oldTop);
 					}
 				}
 				
-				@Override
-				public final String toString() {
-					return "" + this.val;
+				protected void replacing(final Aggregator oldTop) {
+					//pass
 				}
 				
-				private final CompId top() {
+				protected final Aggregator top() {
 					if (null != this.top && null != this.top.top) {
 						this.pack();
 					}
@@ -683,8 +768,8 @@ public final class GraphLayout {
 					}
 				}
 				
-				private final List<CompId> stack() {
-					final var result = new ArrayList<CompId>();
+				private final List<Aggregator> stack() {
+					final var result = new ArrayList<Aggregator>();
 					var tmp = this;
 					
 					while (null != tmp && !result.contains(tmp)) {
@@ -697,6 +782,24 @@ public final class GraphLayout {
 					}
 					
 					return result;
+				}
+				
+			}
+			
+			/**
+			 * @author 2oLDNncs 20250418
+			 */
+			private static final class CompId extends Aggregator {
+				
+				private final int val = ++lastVal;
+				
+				public final int getVal() {
+					return ((CompId) this.top()).val;
+				}
+				
+				@Override
+				public final String toString() {
+					return "" + this.val;
 				}
 				
 				private static int lastVal;
@@ -768,28 +871,12 @@ public final class GraphLayout {
 		
 		private final List<List<Cell>> rows = new ArrayList<>();
 		
-		private final NavigableMap<Integer, Cluster> compClusters = new TreeMap<>();
-		
 		public LayoutGrid(final Graph graph) {
 			this.graph = graph;
 		}
 		
 		public final Graph getGraph() {
 			return this.graph;
-		}
-		
-		public final Cluster parentCluster(final Graph.Node node) {
-			final var nodeParent = node.getParent();
-			
-			if (null == nodeParent) {
-				return this.compClusters.computeIfAbsent(node.getCompId(), __ -> new Cluster());
-			}
-			
-			return nodeCluster(nodeParent);
-		}
-		
-		public static final Cluster nodeCluster(final Graph.Node node) {
-			return (Cluster) node.getProps().computeIfAbsent(K_CLUSTER, __ -> new Cluster());
 		}
 		
 		public final int countRows() {
@@ -886,79 +973,123 @@ public final class GraphLayout {
 			return result;
 		}
 		
-		private final void forEachCluster_DepthFirst(final Consumer<Cluster> action) {
-			final var todo = new ArrayList<Cluster>();
-			
-			todo.addAll(this.compClusters.values());
-			
-			for (var i = 0; i < todo.size(); i += 1) {
-				final var cluster = todo.get(i);
-				
-				for (final var row : cluster.rows.values()) {
-					for (final var node : row) {
-						final var nodeCluster = (Cluster) node.getProps().get(K_CLUSTER);
-						
-						if (null != nodeCluster && !todo.contains(nodeCluster)) {
-							todo.add(nodeCluster);
-						}
-					}
-				}
-			}
-			
-			for (var i = todo.size() - 1; 0 <= i; i -= 1) {
-				action.accept(todo.get(i));
-			}
-		}
-		
-		public static final int getClusterTop(final Graph.Node node) {
-			return nodeCluster(node).getTop();
-		}
-		
-		public static final int getClusterLeft(final Graph.Node node) {
-			return nodeCluster(node).getLeft();
-		}
-		
-		public static final int getClusterWidth(final Graph.Node node) {
-			return nodeCluster(node).getWidth();
-		}
-		
-		public static final void setClusterLeft(final Graph.Node node, final int left) {
-			nodeCluster(node).left = left;
-		}
-		
 		public final void layout() {
-			Log.begin(1, "Appying Hierarchical Grid Layout");
+			Log.begin(1, "Applying Hierarchical Grid Layout");
 			Log.outf(2, "Nodes: %s Edges: %s", this.getGraph().countNodes(), this.getGraph().countEdges());
 			
 			this.computeNodeDepth();
 			
-			this.getGraph().forEach(node -> {
-				nodeCluster(node).add(node);
-//				this.parentCluster(node).add(node);
-//				Log.out(1, node, node.getProps().get(K_DEPTH), nodeCluster(node), this.parentCluster(node).rows);
-			});
+			final var compRoots = new TreeMap<Integer, Collection<Graph.Node>>();
 			
-			this.getGraph().forEach_DepthFirst(node -> {
-				final var nodeCluster = nodeCluster(node);
-				final var parentCluster = parentCluster(node);
-				
-				for (var i = nodeCluster.getTop(); i < nodeCluster.getTop() + nodeCluster.getHeight(); i += 1) {
-//					Log.out(1, node, i);
-					parentCluster.add(i, node);
+			this.graph.forEach(node -> {
+				if (null == node.getParent()) {
+					compRoots.computeIfAbsent(node.getCompId(), __ -> new ArrayList<>()).add(node);
 				}
 			});
 			
-			this.separateClusters();
+			// Init node rects
+			{
+				final var todo = new ArrayList<Graph.Node>();
+				final var done = new HashSet<Graph.Node>();
+				
+				compRoots.values().forEach(todo::addAll);
+				
+				while (!todo.isEmpty()) {
+					final var node = todo.get(0);
+					
+					if (done.contains(node)) {
+						todo.remove(0);
+						final var rect = getRect(node);
+						
+						final Consumer<Graph.Node>[] updateChildRect = cast(new Consumer[1]);
+						updateChildRect[0] = child -> {
+							final var childRect = getRect(child);
+							rect.add(childRect);
+							child.forEachChild(updateChildRect[0]);
+						};
+						
+						node.forEachChild(updateChildRect[0]);
+					} else {
+						final var rect = getRect(node);
+						final var row = (Integer) node.getProps().get(K_DEPTH);
+						
+						rect.setBounds(0, row, 1, 1);
+						Log.out(1, node, rect);
+						
+						todo.addAll(0, node.children);
+						done.add(node);
+					}
+				}
+			}
 			
-//			for (final var cluster : this.compClusters.values()) {
-//				LayoutGrid.reorderNodesInEachRow(cluster.rows.values());
-//			}
-			
-//			this.computeCompOffsets();
+			// Init node locations
+			{
+				final var rowSize = new HashMap<Integer, Integer>();
+				final var todo = new ArrayList<Graph.Node>();
+				final var done = new HashSet<Graph.Node>();
+				
+				compRoots.values().forEach(todo::addAll);
+				
+				while (!todo.isEmpty()) {
+					final var node = todo.get(0);
+					
+					if (done.contains(node)) {
+						todo.remove(0);
+						final var rect = getRect(node);
+						final var lefts = new HashMap<Integer, Integer>();
+						
+						for (final var child : node.children) {
+							final var childRect = getRect(child);
+							for (var y = childRect.y; y < childRect.y + childRect.height; y += 1) {
+								lefts.compute(y, (__, v) -> Math.min(null == v ? Integer.MAX_VALUE : v, childRect.x));
+							}
+						}
+						
+						final var offsetX = lefts.values().stream().max(Integer::compare).orElse(0)
+								- lefts.values().stream().min(Integer::compare).orElse(0);
+						
+						final Consumer<Graph.Node>[] updateChildRect = cast(new Consumer[1]);
+						updateChildRect[0] = child -> {
+							final var childRect = getRect(child);
+							childRect.x += offsetX;
+							rect.add(childRect);
+							child.forEachChild(updateChildRect[0]);
+						};
+						
+						node.forEachChild(updateChildRect[0]);
+						
+						{
+							final var right = rect.x + rect.width - 1;
+							
+							for (var y = rect.y; y < rect.y + rect.height; y += 1) {
+								rowSize.compute(y, (__, v) -> Math.max(null == v ? 0 : v, right));
+							}
+						}
+						
+						Log.out(1, node, rect, rowSize);
+					} else {
+						final var rect = getRect(node);
+						var minX = 0;
+						
+						for (var y = rect.y; y < rect.y + rect.height; y += 1) {
+							minX = Math.max(minX, rowSize.getOrDefault(y, 0));
+						}
+						
+						for (var y = rect.y; y < rect.y + rect.height; y += 1) {
+							rowSize.put(y, minX);
+						}
+						
+						rect.x = rowSize.compute(rect.y, (__, v) -> null == v ? 0 : 1 + v);
+						
+						Log.out(1, node, rect);
+						
+						todo.addAll(0, node.children);
+						done.add(node);
+					}
+				}
+			}
 			
 			this.initCells();
-			
-//			this.adjustNodeCells();
 			
 			this.buildPaths();
 			
@@ -980,7 +1111,6 @@ public final class GraphLayout {
 			
 			final Function<Integer, Consumer<Graph.Node>> applyDepth = d -> node -> {
 				node.getProps().put(K_DEPTH, d);
-//				this.clusterForNode(node).add(node);
 				todo.add(node);
 			};
 			
@@ -1004,90 +1134,26 @@ public final class GraphLayout {
 						if (!(boolean) n1.getProps().getOrDefault(K_DEPTH_EXPLICIT, true)) {
 							n1.getProps().put(K_DEPTH, d0 + 1);
 							n1.getProps().put(K_DEPTH_EXPLICIT, explicit);
-//							this.clusterForNode(n1).add(n1);
 							todo.add(n1);
 						}
 					} else {
 						n1.getProps().put(K_DEPTH, d0 + 1);
 						n1.getProps().put(K_DEPTH_EXPLICIT, explicit);
-//						this.clusterForNode(n1).add(n1);
 						todo.add(n1);
 					}
 				}
-//				n0.streamOutgoingEdges()
-//				.filter(Graph.Edge::isExplicit)
-//				.map(Graph.Edge::getEndNode)
-//				.filter(n -> !n.getProps().containsKey(K_DEPTH))
-//				.forEach(applyDepth.apply(d0 + 1));
-			}
-		}
-		
-		private static final double computeTargetLeft(final Graph.Node node) {
-			final var nodeCluster = nodeCluster(node);
-			
-			return Stream.concat(
-					node.streamOutgoingEdges().map(Graph.Edge::getEndNode),
-					node.streamIncomingEdges().map(Graph.Edge::getStartNode))
-					.map(LayoutGrid::nodeCluster)
-					.mapToDouble(Cluster::getCenterX)
-					.average().orElse(nodeCluster.getCenterX())
-					- nodeCluster.getWidth() / 2.0;
-		}
-		
-		private final void computeCompOffsets() {
-			var nextOffset = 0;
-			
-			for (final var cluster : this.compClusters.values()) {
-				cluster.left = nextOffset;
-				nextOffset += cluster.getWidth();
 			}
 		}
 		
 		private final void initCells() {
 			this.getGraph().forEach(node -> {
-				final var compId = node.getCompId();
-				final var propRow = (int) node.getProps().get(GraphLayout.K_ROW);
-//				final var propCol = (int) node.getProps().get(GraphLayout.K_COL) + this.compClusters.get(compId).getLeft();
-				final var propCol = (int) node.getProps().get(GraphLayout.K_COL);
+				final var rect = getRect(node);
 				
-				node.getProps().put(GraphLayout.K_COL, propCol);
-				
-				final var rowIdx = 1 + 2 * propRow;
-				final var colIdx = 1 + 2 * propCol;
+				final var rowIdx = 1 + 2 * rect.y;
+				final var colIdx = 1 + 2 * rect.x;
 				
 				this.cell(rowIdx, colIdx).setNode(node);
 				this.cell(rowIdx + 1, colIdx + 1); // east and south borders (north and west already taken care of by rowIdx and colIdx)
-			});
-		}
-		
-		private final void adjustNodeCells() {
-			this.compClusters.values().forEach(cluster -> {
-				cluster.rows.values().forEach(row -> {
-					for (var i = row.size() - 1; 0 <= i; i -= 1) {
-						final var node = row.get(i);
-						final var currentRow = (int) node.getProps().get(GraphLayout.K_ROW);
-						final var currentCol = (int) node.getProps().get(GraphLayout.K_COL);
-						final var rowIdx = 1 + 2 * currentRow;
-						final var colIdx = 1 + 2 * currentCol;
-						final var cell = this.cell(rowIdx, colIdx);
-						var targetCol = (int) LayoutGrid.computeTargetCol(node);
-						var targetColIdx = 1 + 2 * targetCol;
-						var targetCell = this.cell(rowIdx, targetColIdx);
-						
-						while (currentCol < targetCol && null != targetCell.getNode()) {
-							targetCol -= 1;
-							targetColIdx = 1 + 2 * targetCol;
-							targetCell = this.cell(rowIdx, targetColIdx);
-						}
-						
-						if (null == targetCell.getNode()) {
-							Log.out(2, "Moving", node, "from", cell, "to", targetCell);
-							cell.setNode(null);
-							targetCell.setNode(node);
-							node.getProps().put(GraphLayout.K_COL, targetCol);
-						}
-					}
-				});
 			});
 		}
 		
@@ -1101,8 +1167,9 @@ public final class GraphLayout {
 						.filter(Graph.Edge::isExplicit)
 						.map(GraphLayout.Graph.Edge::getEndNode)
 						.collect(Collectors.toCollection(HashSet::new));
-				final var rowIdx = 1 + 2 * (int) node.getProps().get(GraphLayout.K_ROW);
-				final var colIdx = 1 + 2 * (int) node.getProps().get(GraphLayout.K_COL);
+				final var rect = getRect(node);
+				final var rowIdx = 1 + 2 * rect.y;
+				final var colIdx = 1 + 2 * rect.x;
 				final var nodeCell = this.cell(rowIdx, colIdx);
 				
 				if (targets.remove(node)) {
@@ -1110,8 +1177,9 @@ public final class GraphLayout {
 				}
 				
 				for (final var target : targets) {
-					final var targetRowIdx = 1 + 2 * (int) target.getProps().get(GraphLayout.K_ROW);
-					final var targetColIdx = 1 + 2 * (int) target.getProps().get(GraphLayout.K_COL);
+					final var targetRect = getRect(target);
+					final var targetRowIdx = 1 + 2 * targetRect.y;
+					final var targetColIdx = 1 + 2 * targetRect.x;
 					final var targetCell = this.cell(targetRowIdx, targetColIdx);
 					
 					Log.out(6, "node:", node, "target:", target);
@@ -1164,128 +1232,6 @@ public final class GraphLayout {
 			}
 			
 			Log.out(6, path, path.waypoints);
-		}
-		
-		private final void separateClusters() {
-			// Separate comp clusters
-			{
-				Cluster previous = null;
-				
-				for (final var cluster : this.compClusters.values()) {
-					if (null != previous) {
-						cluster.left = previous.getLeft() + previous.getWidth();
-					}
-					
-					Log.out(1, cluster, cluster.rows);
-					this.separateSubClusters(cluster);
-					previous = cluster;
-				}
-			}
-			
-			// Separate sub clusters
-			this.getGraph().forEach_BreadthFirst(node -> {
-				final var nodeCluster = nodeCluster(node);
-				Log.out(1, node, nodeCluster, nodeCluster.rows);
-				
-				this.separateSubClusters(nodeCluster);
-			});
-			
-			// Update node position
-			this.getGraph().forEach(node -> {
-				node.getProps().put(K_ROW, getClusterTop(node));
-				node.getProps().put(K_COL, getClusterLeft(node));
-				Log.out(1, node, nodeCluster(node));
-			});
-		}
-		
-		private final void separateSubClusters(final Cluster cluster) {
-			final var parentLeft = cluster.getLeft();
-			final var nexts = new HashMap<Graph.Node, Set<Graph.Node>>();
-			
-			cluster.rows.values().forEach(row -> {
-				Graph.Node prevN = null;
-				
-				for (final var n : row) {
-					if (null != prevN) {
-						computeIfAbsentHS(nexts, prevN).add(n);
-					}
-					
-					prevN = n;
-				}
-			});
-			
-			cluster.rows.values().forEach(row -> {
-				if (!row.isEmpty()) {
-					final var n = row.get(0);
-					
-					setClusterLeft(n, parentLeft);
-					
-					final var todo = new ArrayList<Graph.Node>();
-					
-					todo.add(n);
-					
-					for (var i = 0; i < todo.size(); i += 1) {
-						final var ni = todo.get(i);
-						
-						for (final var next : nexts.getOrDefault(ni, Collections.emptySet())) {
-							setClusterLeft(next, Math.max(getClusterLeft(next), getClusterLeft(ni) + getClusterWidth(ni)));
-							Log.out(1, "", next, nodeCluster(next));
-							todo.add(next);
-						}
-					}
-				}
-			});
-		}
-		
-		private static final int computeRowWidth(final Iterable<Graph.Node> row) {
-			return StreamSupport.stream(row.spliterator(), false)
-					.mapToInt(LayoutGrid::getClusterWidth)
-					.sum();
-		}
-		
-		private static final void reorderNodesInEachRow(final Cluster cluster) {
-			cluster.rows.values().forEach(row -> {
-				
-			});
-		}
-		
-		private static final void reorderNodesInEachRow(final Iterable<List<Graph.Node>> clusterRows) {
-			for (final var j : IntStream.range(0, 10).toArray()) {
-				clusterRows.forEach(row -> {
-					row.sort((node1, node2) -> {
-						final var node1CompId = node1.getCompId();
-						final var node2CompId = node2.getCompId();
-						
-						final var cmpCompId = Integer.compare(node1CompId, node2CompId);
-						
-						if (0 != cmpCompId) {
-							return cmpCompId;
-						}
-						
-						final var node1TargetCol = GraphLayout.LayoutGrid.computeTargetCol(node1);
-						final var node2TargetCol = GraphLayout.LayoutGrid.computeTargetCol(node2);
-						
-						return Double.compare(node1TargetCol, node2TargetCol);
-					});
-					
-					for (var i = 0; i < row.size(); i += 1) {
-						final var before = (int) row.get(i).getProps().get(GraphLayout.K_COL);
-						
-						if (i != before) {
-							row.get(i).getProps().put(GraphLayout.K_COL, i);
-						}
-					}
-				});
-			}
-		}
-		
-		private static final double computeTargetCol(final Graph.Node node) {
-			return Stream.concat(
-					node.streamOutgoingEdges().map(Graph.Edge::getEndNode),
-					node.streamIncomingEdges().map(Graph.Edge::getStartNode))
-					.map(Graph.Node::getProps)
-					.mapToDouble(props -> (int) props.get(K_COL))
-					.average().orElse((int) node.getProps().get(K_COL));
 		}
 		
 		/**
@@ -1660,77 +1606,6 @@ public final class GraphLayout {
 				return String.format("%s -> %s", this.getOri(), this.getDst());
 			}
 			
-		}
-		
-	}
-	
-	/**
-	 * @author 2oLDNncs 20250420
-	 */
-	public static final class Cluster {
-		
-		private int top;
-		
-		private int left;
-		
-		private int width;
-		
-		private int height;
-		
-		private int weight;
-		
-		private final NavigableMap<Integer, List<Graph.Node>> rows = new TreeMap<>();
-		
-		public final int getTop() {
-			return this.top;
-		}
-		
-		public final int getLeft() {
-			return this.left;
-		}
-		
-		public final int getWidth() {
-			return this.width;
-		}
-		
-		public final int getHeight() {
-			return this.height;
-		}
-		
-		public final int getWeight() {
-			return this.weight;
-		}
-		
-		public final double getCenterX() {
-			return this.getLeft() + this.getWidth() / 2.0;
-		}
-		
-		public final void add(final Graph.Node node) {
-			final var row = computeIfAbsent(this.rows, Helpers.cast(node.getProps().get(K_DEPTH)));
-			
-			node.getProps().put(K_COL, row.size());
-			node.getProps().put(K_ROW, node.getProps().get(K_DEPTH));
-			
-			this.addNodeToRow(node, row);
-		}
-		
-		public final void add(final int rowIdx, final Graph.Node node) {
-			this.addNodeToRow(node, computeIfAbsent(this.rows, rowIdx));
-		}
-		
-		private void addNodeToRow(final Graph.Node node, final List<Graph.Node> row) {
-			row.add(node);
-			
-			this.width = Math.max(this.getWidth(), row.size());
-			this.top = this.rows.firstKey();
-			this.height = 1 + this.rows.lastKey() - this.getTop();
-			this.weight += 1;
-		}
-		
-		@Override
-		public final String toString() {
-			return String.format("(@%s,%s %sx%s %s)",
-					this.getLeft(), this.getTop(), this.getWidth(), getHeight(), this.getWeight());
 		}
 		
 	}
