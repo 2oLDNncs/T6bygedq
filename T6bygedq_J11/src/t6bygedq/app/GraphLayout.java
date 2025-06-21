@@ -3,6 +3,7 @@ package t6bygedq.app;
 import static t6bygedq.lib.Helpers.cast;
 import static t6bygedq.lib.Helpers.in;
 
+import java.awt.Point;
 import java.awt.Rectangle;
 import java.awt.geom.Point2D;
 import java.io.FileNotFoundException;
@@ -164,23 +165,6 @@ public final class GraphLayout {
 					});
 					
 					for (final var cell : in(grid.streamCells())) {
-						if (false) {
-							xmlElement(svg, "text", () -> {
-								final var cellX = cellWidth * cell.getColIdx();
-								final var cellY = cellHeight * cell.getRowIdx();
-								svg.writeAttribute("text-anchor", "left");
-								svg.writeAttribute("dominant-baseline", "hanging");
-								svg.writeAttribute("font-size", "" + cellHeight * 4.0 / 20.0);
-								svg.writeAttribute("x", "" + cellX);
-								svg.writeAttribute("y", "" + cellY);
-								svg.writeAttribute("fill", "red");
-								
-								xmlElement(svg, "tspan", () -> {
-//									svg.writeCharacters(Arrays.toString(cell.gpsCoords));
-								});
-							});
-						}
-						
 						final var node = cell.getNode();
 						
 						if (null != node) {
@@ -192,14 +176,18 @@ public final class GraphLayout {
 							{
 								if (1 < node.getClusterWeight()) {
 									final var clusterRect = getRect(node);
-									final var clusterX = cellWidth * (0.5 + 2 * clusterRect.x);
-									final var clusterY = cellHeight * (0.5 + 2 * clusterRect.y);
-									final var clusterWidth = cellWidth * (2 * clusterRect.width);
-									final var clusterHeight = cellHeight * (2 * clusterRect.height);
+									final var cd = node.getClusterDepth();
+									final var ch = node.getClusterHeight();
+									final var r0 = 16;
+									final var r1 = ((r0 - 1.0) / r0) * ch / (ch + cd);
+									final var clusterX = cellWidth * (lerp(1.0, 0.5, r1) + 2 * clusterRect.x);
+									final var clusterY = cellHeight * (lerp(1.0, 0.5, r1) + 2 * clusterRect.y);
+									final var clusterWidth = cellWidth * (2 * clusterRect.width + lerp(-1.0, 0.0, r1));
+									final var clusterHeight = cellHeight * (2 * clusterRect.height + lerp(-1.0, 0.0, r1));
 									Log.out(1, node, clusterRect);
 									
 									xmlElement(svg, "rect", () -> {
-										svg.writeAttribute("fill", "none");
+										svg.writeAttribute("fill", "#00000010");
 										svg.writeAttribute("stroke", "black");
 										svg.writeAttribute("stroke-width", "0.25");
 										svg.writeAttribute("x", "" + clusterX);
@@ -214,7 +202,7 @@ public final class GraphLayout {
 							}
 							
 							xmlElement(svg, "rect", () -> {
-								svg.writeAttribute("fill", "none");
+								svg.writeAttribute("fill", "white");
 								svg.writeAttribute("stroke", "black");
 								svg.writeAttribute("stroke-width", "0.25");
 								svg.writeAttribute("x", "" + cellX);
@@ -987,23 +975,32 @@ public final class GraphLayout {
 				
 				compRoots.values().forEach(todo::addAll);
 				
+				final BiConsumer<Graph.Node, Point>[] translateRect = cast(new BiConsumer[1]);
+				translateRect[0] = (node, delta) -> {
+					getRect(node).translate(delta.x, delta.y);
+					node.children.forEach(child -> translateRect[0].accept(child, delta));
+				};
+				
 				while (!todo.isEmpty()) {
 					final var node = todo.get(0);
 					
 					if (done.contains(node)) {
 						todo.remove(0);
+						
 						final var rect = getRect(node);
 						final var minChildTop = new int[] { Integer.MAX_VALUE };
 						final var maxChildBottom = new int[] { Integer.MIN_VALUE };
-						final Consumer<Graph.Node>[] updateChildRect = cast(new Consumer[1]);
-						updateChildRect[0] = child -> {
+						
+						node.forEachChild(child -> {
 							final var childRect = getRect(child);
+							
+							if (childRect.y <= rect.y) {
+								translateRect[0].accept(child, new Point(0, +1));
+							}
+							
 							minChildTop[0] = Math.min(minChildTop[0], childRect.y);
 							maxChildBottom[0] = Math.max(maxChildBottom[0], childRect.y + childRect.width);
-							child.forEachChild(updateChildRect[0]);
-						};
-						
-						node.forEachChild(updateChildRect[0]);
+						});
 						
 						if (minChildTop[0] < maxChildBottom[0]) {
 							rect.y = minChildTop[0] - 1;
