@@ -68,6 +68,14 @@ public final class GraphLayout {
 		writeSvg(lg, ap.getString(ARG_OUT));
 	}
 	
+	public static final List<String> blank(final List<String> src, final int i) {
+		final var result = new ArrayList<>(src);
+		
+		Collections.fill(result.subList(i, result.size()), "");
+		
+		return result;
+	}
+	
 	public static final Graph parseArcs(final Stream<String> lines) {
 		final Graph g = new Graph();
 		
@@ -75,16 +83,19 @@ public final class GraphLayout {
 		final Function<? super List<String>, ? extends Graph.Node> makeNode = lbl -> {
 			final var result = g.addNode();
 			
-			result.getProps().put(Graph.K_LABEL, Helpers.last(lbl));
+			result.setLabel(Helpers.last(lbl));
 			
 			return result;
 		};
 		final Consumer<List<String>> buildClusters = nodePath -> {
 			for (var i = 2; i <= nodePath.size(); i += 1) {
-				final var parent = nodeMap.computeIfAbsent(nodePath.subList(0, i - 1), makeNode);
-				final var child = nodeMap.computeIfAbsent(nodePath.subList(0, i), makeNode);
+				final var parent = nodeMap.computeIfAbsent(blank(nodePath, i - 1), makeNode);
+				final var child = nodeMap.computeIfAbsent(blank(nodePath, i), makeNode);
 				
-				child.setParent(parent);
+				if (parent != child) {
+					Log.out(6, parent, blank(nodePath, i - 1), "->", child, blank(nodePath, i));
+					child.setParent(parent);
+				}
 			}
 		};
 		
@@ -229,7 +240,7 @@ public final class GraphLayout {
 								xmlElement(svg, "tspan", () -> {
 									svg.writeAttribute("x", "" + centerX);
 									svg.writeAttribute("dy", "1.2em");
-									svg.writeCharacters(node.getProps().getOrDefault(Graph.K_LABEL, "").toString());
+									svg.writeCharacters(node.getLabel());
 								});
 							});
 							
@@ -372,8 +383,6 @@ public final class GraphLayout {
 		public final Node addNode() {
 			final var result = new Node(this.nodes.size());
 			
-			result.getProps().put(K_LABEL, "" + this.nodes.size());
-			
 			this.nodes.add(result);
 			
 			return result;
@@ -381,38 +390,6 @@ public final class GraphLayout {
 		
 		public final void forEach(final Consumer<? super Node> action) {
 			this.nodes.forEach(action);
-		}
-		
-		public final void forEach_BreadthFirst(final Consumer<Node> action) {
-			final var todo = this.collectTreeRoots();
-			
-			for (var i = 0; i < todo.size(); i += 1) {
-				todo.addAll(todo.get(i).children);
-			}
-			
-			todo.forEach(action);
-		}
-		
-		public final void forEach_DepthFirst(final Consumer<Node> action) {
-			final var todo = this.collectTreeRoots();
-			
-			for (var i = 0; i < todo.size(); i += 1) {
-				todo.addAll(i + 1, todo.get(i).children);
-			}
-			
-			for (var i = todo.size() - 1; 0 <= i; i -= 1) {
-				action.accept(todo.get(i));
-			}
-		}
-		
-		private final List<Node> collectTreeRoots() {
-			final var result = new ArrayList<Node>();
-			
-			this.nodes.stream()
-			.filter(Node::isClusterRoot)
-			.forEach(result::add);
-			
-			return result;
 		}
 		
 		public final int countNodes() {
@@ -427,14 +404,12 @@ public final class GraphLayout {
 			return this.nodes.stream().mapToInt(Node::countOutgoingEdges).sum();
 		}
 		
-		public static final String K_LABEL = "Label";
-		
 		/**
 		 * @author 2oLDNncs 20250619
 		 */
-		public static abstract class Clust extends Obj {
+		public static abstract class Cluster extends Obj {
 			
-			private Clust parent;
+			private Cluster parent;
 			
 			final List<Node> children = new ArrayList<>();
 			
@@ -444,11 +419,15 @@ public final class GraphLayout {
 			
 			private int clusterWeight = -1;
 			
-			public final Clust getParent() {
+			public final Cluster getParent() {
 				return this.parent;
 			}
 			
-			public final void setParent(final Clust parent) {
+			public final void setParent(final Cluster parent) {
+				if (this == parent) {
+					throw new IllegalStateException(String.format("Cannot parent %s to itself", this));
+				}
+				
 				if (this.getParent() != parent) {
 					if (null != this.getParent()) {
 						this.removeFromParent(this.getParent());
@@ -462,11 +441,11 @@ public final class GraphLayout {
 				}
 			}
 			
-			protected void removeFromParent(final Clust parent) {
+			protected void removeFromParent(final Cluster parent) {
 				parent.children.remove(this);
 			}
 			
-			protected void addToParent(final Clust parent) {
+			protected void addToParent(final Cluster parent) {
 				parent.children.add((Node) this);
 			}
 			
@@ -502,7 +481,7 @@ public final class GraphLayout {
 				if (this.clusterHeight < 0) {
 					this.clusterHeight = 1 +
 							this.streamChildren()
-							.mapToInt(Clust::getClusterHeight)
+							.mapToInt(Cluster::getClusterHeight)
 							.max().orElse(-1);
 				}
 				
@@ -513,7 +492,7 @@ public final class GraphLayout {
 				if (this.clusterWeight < 0) {
 					this.clusterWeight = 1 +
 							this.streamChildren()
-							.mapToInt(Clust::getClusterWeight)
+							.mapToInt(Cluster::getClusterWeight)
 							.sum();
 				}
 				
@@ -533,14 +512,14 @@ public final class GraphLayout {
 		/**
 		 * @author 2oLDNncs 20250619
 		 */
-		public static final class Comp extends Clust {
+		public static final class Comp extends Cluster {
 			
 		}
 		
 		/**
 		 * @author 2oLDNncs 20250402
 		 */
-		public static final class Node extends Clust {
+		public static final class Node extends Cluster {
 			
 			private final int index;
 			
@@ -550,8 +529,11 @@ public final class GraphLayout {
 			
 			private final CompId compId = new CompId();
 			
+			private String label;
+			
 			public Node(final int index) {
 				this.index = index;
+				this.setLabel(Integer.toString(index));
 			}
 			
 			public final int getIndex() {
@@ -562,12 +544,20 @@ public final class GraphLayout {
 				return this.compId.getVal();
 			}
 			
+			public final String getLabel() {
+				return this.label;
+			}
+			
+			public final void setLabel(final String label) {
+				this.label = label;
+			}
+			
 			public final Node getParentNode() {
 				return Helpers.castOrNull(Node.class, this.getParent());
 			}
 			
 			@Override
-			protected final void removeFromParent(final Clust parent) {
+			protected final void removeFromParent(final Cluster parent) {
 				super.removeFromParent(parent);
 				
 				final var parentNode = this.getParentNode();
@@ -583,7 +573,7 @@ public final class GraphLayout {
 			}
 			
 			@Override
-			protected final void addToParent(final Clust parent) {
+			protected final void addToParent(final Cluster parent) {
 				super.addToParent(parent);
 				
 				final var parentNode = this.getParentNode();
@@ -982,10 +972,12 @@ public final class GraphLayout {
 			final var compRoots = new TreeMap<Integer, Collection<Graph.Node>>();
 			
 			this.graph.forEach(node -> {
-				if (null == node.getParent()) {
+				if (node.isClusterRoot()) {
 					compRoots.computeIfAbsent(node.getCompId(), __ -> new ArrayList<>()).add(node);
 				}
 			});
+			
+			Log.out(6, "CompRoots:", compRoots);
 			
 			// Init node rects
 			{
@@ -1002,19 +994,26 @@ public final class GraphLayout {
 						final var rect = getRect(node);
 						
 						final Consumer<Graph.Node>[] updateChildRect = cast(new Consumer[1]);
+						final var minChildTop = new int[] { Integer.MAX_VALUE };
 						updateChildRect[0] = child -> {
 							final var childRect = getRect(child);
+							minChildTop[0] = Math.min(minChildTop[0], childRect.y);
 							rect.add(childRect);
 							child.forEachChild(updateChildRect[0]);
 						};
 						
 						node.forEachChild(updateChildRect[0]);
+						
+						if (minChildTop[0] < Integer.MAX_VALUE) {
+							final var dy = minChildTop[0] - 1 - rect.y;
+							rect.y += dy;
+							rect.height -= dy;
+						}
 					} else {
 						final var rect = getRect(node);
 						final var row = (Integer) node.getProps().get(K_DEPTH);
 						
 						rect.setBounds(0, row, 1, 1);
-						Log.out(1, node, rect);
 						
 						todo.addAll(0, node.children);
 						done.add(node);
@@ -1066,7 +1065,7 @@ public final class GraphLayout {
 							}
 						}
 						
-						Log.out(1, node, rect, rowSize);
+						Log.out(6, node, rect, rowSize);
 					} else {
 						final var rect = getRect(node);
 						var minX = 0;
@@ -1081,7 +1080,7 @@ public final class GraphLayout {
 						
 						rect.x = rowSize.compute(rect.y, (__, v) -> null == v ? 0 : 1 + v);
 						
-						Log.out(1, node, rect);
+						Log.out(6, node, rect);
 						
 						todo.addAll(0, node.children);
 						done.add(node);
@@ -1151,6 +1150,14 @@ public final class GraphLayout {
 				
 				final var rowIdx = 1 + 2 * rect.y;
 				final var colIdx = 1 + 2 * rect.x;
+				
+				Log.out(6, node, rowIdx, colIdx, node.getCompId(), node.getParent());
+				
+				if (null != this.cell(rowIdx, colIdx).getNode()) {
+					
+					throw new IllegalStateException(String.format("Conflict in cell(%s %s): %s vs %s",
+							rowIdx, colIdx, this.cell(rowIdx, colIdx).getNode(), node));
+				}
 				
 				this.cell(rowIdx, colIdx).setNode(node);
 				this.cell(rowIdx + 1, colIdx + 1); // east and south borders (north and west already taken care of by rowIdx and colIdx)
