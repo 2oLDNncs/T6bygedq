@@ -135,7 +135,15 @@ public final class GraphvizPrinter {
 					nodeElements.length));
 		}
 		
-		return Arrays.asList(nodeElements);
+		{
+			var i = nodeElements.length;
+			
+			while (0 < i && nodeElements[i - 1].isEmpty()) {
+				i -= 1;
+			}
+			
+			return Arrays.asList(Arrays.copyOf(nodeElements, i));
+		}
 	}
 	
 	private final List<Integer> toArc(final String context, final String[] arcElements) {
@@ -171,7 +179,7 @@ public final class GraphvizPrinter {
 	
 	private final void updateNodeIds(final List<String> node) {
 		for (var i = 0; i < node.size(); i += 1) {
-			this.nodeIds.computeIfAbsent(keepLeft(node, i, FILLER), __ -> 1 + this.nodeIds.size());
+			this.nodeIds.computeIfAbsent(keepLeft(node, i), __ -> 1 + this.nodeIds.size());
 		}
 	}
 	
@@ -192,21 +200,19 @@ public final class GraphvizPrinter {
 	}
 	
 	private final void printClusters() {
-		final var node = new ArrayList<>(Collections.nCopies(this.expectedArcElementsLength / 2, FILLER));
-		
-		this.printClusters(this.clusters, node, 0, "\t");
+		this.printClusters(this.clusters, new ArrayList<>(), 0, "\t");
 	}
 	
 	private final void printClusters(final Map<String, Object> clusters,
 			final List<String> node, final int i, final String indent) {
 		clusters.forEach((k, v) -> {
-			node.set(i, k);
+			node.add(k);
 			final var nodeId = Objects.requireNonNull(this.nodeIds.get(node));
 			final var props = new LinkedHashMap<>(Map.of("label", k));
 			
 			this.applyProps(this.nodeProps.getOrDefault(node, Collections.emptyMap()), props);
 			
-			if (i + 1 < node.size()) {
+			if (i + 1 < this.expectedArcElementsLength / 2) {
 				// Graphviz doc: Clusters are encoded as subgraphs whose names have the prefix 'cluster'.
 				this.out.println(String.format("%ssubgraph cluster_%s {", indent, nodeId));
 				
@@ -221,7 +227,9 @@ public final class GraphvizPrinter {
 				//       but the result looks weird (hard to describe, the invisible nodes affect the global layout)
 				this.out.println(String.format("%s	%s [label=\"\",shape=point,width=0,height=0]", indent, nodeId));
 				
-				this.printClusters(cast(v), node, i + 1, indent + "\t");
+				if (null != v) {
+					this.printClusters(cast(v), node, i + 1, indent + "\t");
+				}
 				
 				this.out.println(String.format("%s}", indent));
 			} else if (!"".equals(k)) { // To avoid duplicates, don't print an additional node if the leaf matches a cluster node
@@ -229,7 +237,7 @@ public final class GraphvizPrinter {
 						indent, nodeId, formatProps(props)));
 			}
 			
-			node.set(i, FILLER);
+			node.remove(node.size() - 1);
 		});
 	}
 	
@@ -271,14 +279,8 @@ public final class GraphvizPrinter {
 	
 	public static final String PROPKEY_CLASSES = "classes";
 	
-	private static final String FILLER = "";
-	
-	private static final <E> List<E> keepLeft(final List<E> elements, final int n, final E filler) {
-		final var result = new ArrayList<>(elements);
-		
-		Collections.fill(result.subList(n + 1, result.size()), filler);
-		
-		return result;
+	private static final <E> List<E> keepLeft(final List<E> elements, final int n) {
+		return elements.subList(0, n + 1);
 	}
 	
 	private static final <K> void setObjProp(final Map<K, Map<String, String>> props,
