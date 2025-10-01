@@ -1,8 +1,10 @@
 package t6bygedq.app;
 
+import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.PrintStream;
+import java.io.UncheckedIOException;
 import java.util.Arrays;
 import java.util.function.Consumer;
 
@@ -31,7 +33,7 @@ public class XSSFWorkbookToGraphviz {
 	public static final String ARG_RANKDIR = "-Rankdir";
 	public static final String ARG_OUT = "-Out";
 	
-	public static final void main(final String... args) throws InvalidFormatException, IOException {
+	public static final void main(final String... args) throws IOException {
 		final var ap = new ArgsParser(args);
 		
 		ap.setDefault(ARG_IN, "data/test_gv.xlsx");
@@ -42,8 +44,27 @@ public class XSSFWorkbookToGraphviz {
 		ap.setDefault(ARG_RANKDIR, "TB");
 		ap.setDefault(ARG_OUT, "data/test_gv.gv");
 		
-		try (final var workbook = new XSSFWorkbook(OPCPackage.open(ap.getFile(ARG_IN), PackageAccess.READ))) {
+		try (final var workbook = tryOpenWorkbook(ap.getFile(ARG_IN), PackageAccess.READ)) {
 			processWorkbook(workbook, ap);
+		}
+	}
+	
+	public static final void forEachRowInWorkbookSheet(final ArgsParser ap, final String workbookFileKey, final String sheetKey,
+			final Consumer<String[]> action) throws IOException {
+		try (final var workbook = tryOpenWorkbook(ap.getFile(workbookFileKey), PackageAccess.READ)) {
+			processSheet(workbook, ap, sheetKey, action);
+		}
+	}
+	
+	public static final XSSFWorkbook tryOpenWorkbook(final File file, final PackageAccess packageAccess) {
+		try {
+			return new XSSFWorkbook(OPCPackage.open(file, PackageAccess.READ));
+		} catch (final InvalidFormatException e) {
+			e.printStackTrace();
+			
+			return null;
+		} catch (final IOException e) {
+			throw new UncheckedIOException(e);
 		}
 	}
 	
@@ -75,7 +96,7 @@ public class XSSFWorkbookToGraphviz {
 		}
 	}
 	
-	private static final void processSheet(final XSSFWorkbook workbook, final ArgsParser ap, final String apKey,
+	public static final void processSheet(final XSSFWorkbook workbook, final ArgsParser ap, final String apKey,
 			final Consumer<String[]> action) {
 		final var sheetName = ap.getString(apKey);
 		
