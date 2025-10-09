@@ -10,6 +10,7 @@ import java.util.function.Consumer;
 import t6bygedq.lib.ArgsParser;
 import t6bygedq.lib.GraphvizPrinter;
 import t6bygedq.lib.Helpers;
+import t6bygedq.lib.Log;
 
 /**
  * @author 2oLDNncs 20250929
@@ -24,6 +25,7 @@ public class DsvToGraphviz {
 	public static final String ARG_LAYOUT = "-Layout";
 	public static final String ARG_COMPOUND = "-Compound";
 	public static final String ARG_RANKDIR = "-Rankdir";
+	public static final String ARG_RANKSEP = "-Ranksep";
 	public static final String ARG_OUT = "-Out";
 	
 	public static final void main(final String... args) throws IOException {
@@ -37,13 +39,28 @@ public class DsvToGraphviz {
 		ap.setDefault(ARG_LAYOUT, "dot");
 		ap.setDefault(ARG_COMPOUND, true);
 		ap.setDefault(ARG_RANKDIR, "TB");
+		ap.setDefault(ARG_RANKSEP, 0.75);
 		ap.setDefault(ARG_OUT, "data/test_gv_dsv.gv");
 		
+		Log.outf(0, "%s.main", DsvToGraphviz.class.getSimpleName());
+		Log.outf(0, " %s<%s>", ARG_IN, ap.getString(ARG_IN));
+		Log.outf(0, " %s<%s>", ARG_SHEET, ap.getString(ARG_SHEET));
+		Log.outf(0, " %s<%s>", ARG_DELIMITER1, ap.getString(ARG_DELIMITER1));
+		Log.outf(0, " %s<%s>", ARG_DELIMITER2, ap.getString(ARG_DELIMITER2));
+		Log.outf(0, " %s<%s>", ARG_STRICT, ap.getBoolean(ARG_STRICT));
+		Log.outf(0, " %s<%s>", ARG_LAYOUT, ap.getString(ARG_LAYOUT));
+		Log.outf(0, " %s<%s>", ARG_COMPOUND, ap.getBoolean(ARG_COMPOUND));
+		Log.outf(0, " %s<%s>", ARG_RANKDIR, ap.getString(ARG_RANKDIR));
+		Log.outf(0, " %s<%s>", ARG_RANKSEP, ap.getDouble(ARG_RANKSEP));
+		Log.outf(0, " %s<%s>", ARG_OUT, ap.getString(ARG_OUT));
+		
+		Log.beginf(0, "Processing");
 		try (final var out = getPrintStream(ap, ARG_OUT)) {
 			final var propDelimiter = ap.getString(ARG_DELIMITER2);
 			final var gvp = new GraphvizPrinter(out);
 			
 			gvp.begin(ap.getBoolean(ARG_STRICT), ap.getString(ARG_LAYOUT), ap.getBoolean(ARG_COMPOUND), ap.getString(ARG_RANKDIR));
+			gvp.graphProp("ranksep", ap.getDouble(ARG_RANKSEP), "In dot, sets the desired rank separation, in inches");
 			
 			try {
 				if (!ap.getString(ARG_SHEET).isBlank()) {
@@ -59,6 +76,7 @@ public class DsvToGraphviz {
 				gvp.end();
 			}
 		}
+		Log.done();
 	}
 	
 	public static final void forEachRowInDsv(final ArgsParser ap, final String dsvFileKey, final String delimiterKey,

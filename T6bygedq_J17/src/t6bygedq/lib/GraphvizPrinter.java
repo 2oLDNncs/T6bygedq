@@ -56,9 +56,13 @@ public final class GraphvizPrinter {
 	 */
 	public final void begin(final boolean strict, final String layout, final boolean compound, final String rankdir) {
 		this.out.println(String.format("%sdigraph G { // Use strict to merge duplicate edges", strict ? "strict " : ""));
-		this.out.println(String.format("	layout=%s // Use dot for clustering", layout));
-		this.out.println(String.format("	compound=%s // If true, allow edges between clusters", compound));
-		this.out.println(String.format("	rankdir=%s // TB or LR", rankdir));
+		this.graphProp("layout", layout, "Use dot for clustering");
+		this.graphProp("compound", compound, "If true, allow edges between clusters");
+		this.graphProp("rankdir", rankdir, "TB (Top-Bottom) or LR (Left-Right)");
+	}
+	
+	public final void graphProp(final String key, final Object value, final String comment) {
+		this.out.println(String.format("	%s=%s // %s", key, value, comment));
 	}
 	
 	/**
@@ -166,10 +170,20 @@ public final class GraphvizPrinter {
 		this.addNode(tail);
 		this.addNode(head);
 		
-		final var tailId = this.nodeIds.get(tail);
-		final var headId = this.nodeIds.get(head);
+		final var tailId = this.nodeIds.get(trim(tail));
+		final var headId = this.nodeIds.get(trim(head));
 		
 		return Arrays.asList(tailId, headId);
+	}
+	
+	private static final List<String> trim(final List<String> node) {
+		var i = node.size() - 1;
+		
+		while (0 < i && node.get(i).isEmpty()) {
+			i -= 1;
+		}
+		
+		return node.subList(0, i + 1);
 	}
 	
 	private void addNode(final List<String> node) {
@@ -179,7 +193,7 @@ public final class GraphvizPrinter {
 	
 	private final void updateNodeIds(final List<String> node) {
 		for (var i = 0; i < node.size(); i += 1) {
-			this.nodeIds.computeIfAbsent(keepLeft(node, i), __ -> 1 + this.nodeIds.size());
+			this.nodeIds.computeIfAbsent(prefix(node, i), __ -> 1 + this.nodeIds.size());
 		}
 	}
 	
@@ -203,6 +217,18 @@ public final class GraphvizPrinter {
 		this.printClusters(this.clusters, new ArrayList<>(), 0, "\t");
 	}
 	
+	private static final boolean isEmpty(final Map<String, Object> clusters) {
+		if (null == clusters || clusters.isEmpty()) {
+			return true;
+		}
+		
+		if (1 == clusters.size() && clusters.containsKey("")) {
+			return isEmpty(Helpers.cast(clusters.get("")));
+		}
+		
+		return false;
+	}
+	
 	private final void printClusters(final Map<String, Object> clusters,
 			final List<String> node, final int i, final String indent) {
 		clusters.forEach((k, v) -> {
@@ -212,7 +238,7 @@ public final class GraphvizPrinter {
 			
 			this.applyProps(this.nodeProps.getOrDefault(node, Collections.emptyMap()), props);
 			
-			if (i + 1 < this.expectedArcElementsLength / 2) {
+			if (i + 1 < this.expectedArcElementsLength / 2 && !(isEmpty(Helpers.cast(v)) && Helpers.last(node).isEmpty())) {
 				// Graphviz doc: Clusters are encoded as subgraphs whose names have the prefix 'cluster'.
 				this.out.println(String.format("%ssubgraph cluster_%s {", indent, nodeId));
 				
@@ -279,7 +305,7 @@ public final class GraphvizPrinter {
 	
 	public static final String PROPKEY_CLASSES = "classes";
 	
-	private static final <E> List<E> keepLeft(final List<E> elements, final int n) {
+	private static final <E> List<E> prefix(final List<E> elements, final int n) {
 		return elements.subList(0, n + 1);
 	}
 	
