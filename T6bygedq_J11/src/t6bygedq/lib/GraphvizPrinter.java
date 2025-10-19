@@ -186,7 +186,7 @@ public final class GraphvizPrinter {
 		return node.subList(0, i + 1);
 	}
 	
-	private void addNode(final List<String> node) {
+	private final void addNode(final List<String> node) {
 		this.updateNodeIds(node);
 		this.updateClusters(node);
 	}
@@ -214,6 +214,10 @@ public final class GraphvizPrinter {
 	}
 	
 	private final void printClusters() {
+//		Log.out(0);
+//		this.nodeIds.entrySet().forEach(System.out::println);
+//		Log.out(0);
+//		this.clusters.entrySet().forEach(System.out::println);
 		this.printClusters(this.clusters, new ArrayList<>(), 0, "\t");
 	}
 	
@@ -231,6 +235,7 @@ public final class GraphvizPrinter {
 	
 	private final void printClusters(final Map<String, Object> clusters,
 			final List<String> node, final int i, final String indent) {
+		Log.out(1, clusters);
 		clusters.forEach((k, v) -> {
 			node.add(k);
 			final var nodeId = Objects.requireNonNull(this.nodeIds.get(node));
@@ -239,26 +244,30 @@ public final class GraphvizPrinter {
 			this.applyProps(this.nodeProps.getOrDefault(node, Collections.emptyMap()), props);
 			
 			if (i + 1 < this.expectedArcElementsLength / 2 && !(isEmpty(Helpers.cast(v)) && Helpers.last(node).isEmpty())) {
-				// Graphviz doc: Clusters are encoded as subgraphs whose names have the prefix 'cluster'.
-				this.out.println(String.format("%ssubgraph cluster_%s {", indent, nodeId));
-				
-				props.forEach((propK, propV) -> {
-					this.out.println(String.format("%s	%s=%s", indent, propK, formatPropValue(propV)));
-				});
-				
-				// This is a trick to get a node that can be used to connect to/from the whole cluster using ltail and lhead
-				// FIXME This invisible node actually gets positioned somewhere next to the visible ones,
-				//       so the incoming and outgoing edges aren't aimed at the center of the cluster : how to fix this?
-				//       We can add invisible edges from the invisible cluster node to force its rank,
-				//       but the result looks weird (hard to describe, the invisible nodes affect the global layout)
-				this.out.println(String.format("%s	%s [label=\"\",shape=point,width=0,height=0]", indent, nodeId));
+				if (!k.isEmpty()) {
+					// Graphviz doc: Clusters are encoded as subgraphs whose names have the prefix 'cluster'.
+					this.out.println(String.format("%ssubgraph cluster_%s {", indent, nodeId));
+					
+					props.forEach((propK, propV) -> {
+						this.out.println(String.format("%s	%s=%s", indent, propK, formatPropValue(propV)));
+					});
+					
+					// This is a trick to get a node that can be used to connect to/from the whole cluster using ltail and lhead
+					// FIXME This invisible node actually gets positioned somewhere next to the visible ones,
+					//       so the incoming and outgoing edges aren't aimed at the center of the cluster : how to fix this?
+					//       We can add invisible edges from the invisible cluster node to force its rank,
+					//       but the result looks weird (hard to describe, the invisible nodes affect the global layout)
+					this.out.println(String.format("%s	%s [label=\"\",shape=point,width=0,height=0]", indent, nodeId));
+				}
 				
 				if (null != v) {
 					this.printClusters(cast(v), node, i + 1, indent + "\t");
 				}
 				
-				this.out.println(String.format("%s}", indent));
-			} else if (!"".equals(k)) { // To avoid duplicates, don't print an additional node if the leaf matches a cluster node
+				if (!k.isEmpty()) {
+					this.out.println(String.format("%s}", indent));
+				}
+			} else if (!k.isEmpty()) { // To avoid duplicates, don't print an additional node if the leaf matches a cluster node
 				this.out.println(String.format("%s%s [%s]",
 						indent, nodeId, formatProps(props)));
 			}
