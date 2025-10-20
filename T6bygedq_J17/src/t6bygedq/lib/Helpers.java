@@ -9,6 +9,7 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Objects;
@@ -100,6 +101,48 @@ public final class Helpers {
 	
 	public static final <E> E last(final List<E> elements) {
 		return elements.get(elements.size() - 1);
+	}
+	
+	public static final <E> void swap(final Collection<E> a, final Collection<E> b) {
+		if (a.size() <= b.size()) {
+			final var tmp = new ArrayList<>(a);
+			a.clear();
+			a.addAll(b);
+			b.clear();
+			b.addAll(tmp);
+		} else {
+			swap(b, a);
+		}
+	}
+	
+	public static final <E> Iterable<E> reversed(final List<E> list) {
+		return new Iterable<>() {
+			
+			@Override
+			public final Iterator<E> iterator() {
+				final var it = list.listIterator(list.size());
+				
+				return new Iterator<>() {
+					
+					@Override
+					public boolean hasNext() {
+						return it.hasPrevious();
+					}
+					
+					@Override
+					public final E next() {
+						return it.previous();
+					}
+					
+					@Override
+					public final void remove() {
+						it.remove();
+					}
+					
+				};
+			}
+			
+		};
 	}
 	
 	public static final String substring(final String s, final int start) {

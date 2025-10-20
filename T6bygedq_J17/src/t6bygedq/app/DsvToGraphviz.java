@@ -9,7 +9,6 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -176,36 +175,6 @@ public class DsvToGraphviz {
 			return result;
 		}
 		
-	}
-	
-	public static final <E> Iterable<E> reversed(final List<E> list) {
-		return new Iterable<>() {
-			
-			@Override
-			public final Iterator<E> iterator() {
-				final var it = list.listIterator(list.size());
-				
-				return new Iterator<>() {
-					
-					@Override
-					public boolean hasNext() {
-						return it.hasPrevious();
-					}
-					
-					@Override
-					public final E next() {
-						return it.previous();
-					}
-					
-					@Override
-					public final void remove() {
-						it.remove();
-					}
-					
-				};
-			}
-			
-		};
 	}
 	
 	private static final void processClusterStack(final List<Cluster> clusterStack, final Graph graph, final Consumer<String[]> action) {
@@ -409,14 +378,14 @@ public class DsvToGraphviz {
 			
 			for (final var propIt = this.props.iterator(); propIt.hasNext();) {
 				final var prop = propIt.next();
-				final var kv = prop.split("=");
+				final var kv = prop.split("=", 2);
 				
 				if (2 != kv.length) {
 					throw new IllegalArgumentException(String.format("Invalid prop: %s", prop));
 				}
 				
 				if ("dir".equals(kv[0]) && "back".equals(kv[1])) {
-					swap(this.srcPath, this.dstPath);
+					Helpers.swap(this.srcPath, this.dstPath);
 					propIt.remove();
 					break;
 				}
@@ -450,18 +419,6 @@ public class DsvToGraphviz {
 		result[result.length - 1] = String.join(graph.propDelimiter, props);
 		
 		return result;
-	}
-	
-	public static final <E> void swap(final Collection<E> a, final Collection<E> b) {
-		if (a.size() <= b.size()) {
-			final var tmp = new ArrayList<>(a);
-			a.clear();
-			a.addAll(b);
-			b.clear();
-			b.addAll(tmp);
-		} else {
-			swap(b, a);
-		}
 	}
 	
 	private static final void processRows(final ArgsParser ap, final Consumer<String[]> action) throws IOException {
