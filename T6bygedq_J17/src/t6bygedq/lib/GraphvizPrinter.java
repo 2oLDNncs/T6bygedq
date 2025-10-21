@@ -235,7 +235,6 @@ public final class GraphvizPrinter {
 	
 	private final void printClusters(final Map<String, Object> clusters,
 			final List<String> node, final int i, final String indent) {
-		Log.out(1, clusters);
 		clusters.forEach((k, v) -> {
 			node.add(k);
 			final var nodeId = Objects.requireNonNull(this.nodeIds.get(node));

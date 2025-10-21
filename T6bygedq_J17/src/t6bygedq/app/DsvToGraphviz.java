@@ -9,22 +9,20 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
-import java.util.stream.Collectors;
 
 import t6bygedq.lib.ArgsParser;
 import t6bygedq.lib.GraphvizPrinter;
 import t6bygedq.lib.Helpers;
 import t6bygedq.lib.Log;
-import t6bygedq.lib.LogLevel;
 
 /**
  * @author 2oLDNncs 20250929
  */
-@LogLevel(0)
 public class DsvToGraphviz {
 	
 	/**
@@ -95,35 +93,19 @@ public class DsvToGraphviz {
 						graph.allLinks.add(new Link(graph, row));
 					});
 					
-//					dprint(graph.allLinks);
+//					graph.allLinks.forEach(link -> gvpAction.accept(link.toRow()));
+					graph.allLinks.forEach(Link::tryParentSrcToDst);
+					graph.collectRoots();
+					graph.updateLevels();
+					graph.reorgDirBack();
 					
-					final var roots = graph.collectRoots();
+					graph.roots.forEach(root -> graph.processClusterStack(newList(root), gvpAction));
 					
-					Log.out(1, roots.size());
-					
-					roots.forEach(Cluster::updateLevel);
-					
-					Log.out(1, graph.allClusters);
-					
-					{
-						final var paddingSize = -roots.stream()
-								.mapToInt(Cluster::getLevel)
-								.min().getAsInt();
-						graph.nodeSize += paddingSize;
+					graph.allPaths.forEach(prefix -> {
+						final var prefixProps = graph.findPathProps(prefix);
 						
-						// fix negative levels after update
-						graph.allClusters.values().forEach(cluster -> cluster.level += paddingSize);
-					}
-					
-					graph.allLinks.forEach(Link::reorgDirBack);
-					
-					roots.forEach(root -> processClusterStack(newList(root), graph, gvpAction));
-					
-					graph.allPrefixes.forEach(prefix -> {
-						final var prefixProps = graph.findPrefixProps(prefix);
-						
-						if (null != prefixProps) {
-							gvpAction.accept(makeRow(graph, prefix, Collections.emptyList(), prefixProps));
+						if (!prefixProps.isEmpty()) {
+							gvpAction.accept(graph.makeRow(prefix, Collections.emptyList(), prefixProps));
 						}
 					});
 				} else {
@@ -149,25 +131,54 @@ public class DsvToGraphviz {
 		
 		public final List<Link> allLinks = new ArrayList<>();
 		public final Map<Object, Cluster> allClusters = new HashMap<>();
-		public final Map<List<Cluster>, List<String>> pathProps = new HashMap<>();
-		public final Collection<List<Cluster>> allPrefixes = new LinkedHashSet<>();
-		public int nodeSize;
+		public final Map<List<Cluster>, Map<String, String>> pathProps = new HashMap<>();
+		public final Collection<List<Cluster>> allPaths = new LinkedHashSet<>();
+		public final Collection<Cluster> roots = new LinkedHashSet<>();
+		private int nodeSize = 0;
 		
-		public final Collection<Cluster> collectRoots() {
-			return this.allClusters.values().stream()
-					.filter(Cluster::isRoot)
-					.collect(Collectors.toSet());
+		public final int getNodeSize() {
+			return this.nodeSize;
 		}
 		
-		public final List<String> findPrefixProps(List<Cluster> prefix) {
-			List<String> result = null;
+		public final void setNodeSize(final int nodeSize) {
+			if (0 == this.getNodeSize()) {
+				this.nodeSize = nodeSize;
+			} else if (this.getNodeSize() != nodeSize) {
+				throw new IllegalArgumentException(String.format("Invalid node size: Expected %s Actual %s", this.getNodeSize(), nodeSize));
+			}
+		}
+		
+		public final void collectRoots() {
+			this.allClusters.values().stream()
+					.filter(Cluster::isRoot)
+					.forEach(this.roots::add);
+		}
+		
+		public final void updateLevels() {
+			this.roots.forEach(Cluster::updateLevel);
 			
-			for (var j = prefix.size(); 0 < j && null == result; j -= 1) {
-				for (var i = j - 1; 0 <= i && null == result; i -= 1) {
-					final var props = this.pathProps.get(prefix.subList(i, j));
+			final var paddingSize = -this.roots.stream()
+					.mapToInt(Cluster::getLevel)
+					.min().getAsInt();
+			this.nodeSize += paddingSize;
+			
+			// fix negative levels after update
+			this.allClusters.values().forEach(cluster -> cluster.updateLevel(paddingSize));
+		}
+		
+		public final void reorgDirBack() {
+			this.allLinks.forEach(Link::reorgDirBack);
+		}
+		
+		public final Map<String, String> findPathProps(final List<Cluster> path) {
+			final var result = new LinkedHashMap<String, String>();
+			
+			for (var j = path.size(); 0 < j; j -= 1) {
+				for (var i = j - 1; 0 <= i; i -= 1) {
+					final var props = this.pathProps.get(path.subList(i, j));
 					
 					if (null != props) {
-						result = props;
+						props.forEach((k, v) -> result.computeIfAbsent(k, __ -> v));
 					}
 				}
 			}
@@ -175,46 +186,65 @@ public class DsvToGraphviz {
 			return result;
 		}
 		
-	}
-	
-	private static final void processClusterStack(final List<Cluster> clusterStack, final Graph graph, final Consumer<String[]> action) {
-//		Log.out(1, callStack);
-		final var top = clusterStack.get(0);
-		
-		for (final var link : top.links) {
-			if (!link.dstPath.isEmpty() && !top.key.equals(link.dstPath.get(0).key)) {
-				clusterStack.add(0, link.dstPath.get(0));
-				processClusterStack(clusterStack, graph, action);
-				clusterStack.remove(0);
+		public final String[] makeRow(final List<Cluster> srcPath, final List<Cluster> dstPath, final Map<String, String> props) {
+			final var result = new String[2 * this.nodeSize + 1];
+			
+			Arrays.fill(result, "");
+			
+			for (var i = 0; i < srcPath.size(); i += 1) {
+				result[srcPath.get(i).getLevel()] = srcPath.get(i).getKeyName();
 			}
 			
-			final var tmp = link.dup();
+			for (var i = 0; i < dstPath.size(); i += 1) {
+				result[this.nodeSize + dstPath.get(i).getLevel()] = dstPath.get(i).getKeyName();
+			}
 			
-			for (final var c : clusterStack) {
-				tmp.srcPath.add(0, c);
+			result[result.length - 1] = props.entrySet().stream()
+					.map(Object::toString)
+					.reduce((e1, e2) -> e1 + this.propDelimiter + e2)
+					.orElse("");
+			
+			return result;
+		}
+		
+		public final void processClusterStack(final List<Cluster> clusterStack, final Consumer<String[]> action) {
+			final var top = clusterStack.get(0);
+			
+			for (final var link : top.links) {
+				if (!link.dstPath.isEmpty() && !top.equals(link.dstPath.get(0))) {
+					clusterStack.add(0, link.dstPath.get(0));
+					this.processClusterStack(clusterStack, action);
+					clusterStack.remove(0);
+				}
 				
-				if (tmp.hasDst()) {
-					tmp.dstPath.add(0, c);
+				final var tmp = link.dup();
+				
+				for (final var c : clusterStack) {
+					tmp.srcPath.add(0, c);
+					
+					if (tmp.hasDst()) {
+						tmp.dstPath.add(0, c);
+					}
+				}
+				
+				action.accept(tmp.toRow());
+				
+				if (!tmp.srcPath.isEmpty() && !tmp.dstPath.isEmpty()) {
+					addAllPrefixes(tmp.srcPath, this.allPaths);
+					addAllPrefixes(tmp.dstPath, this.allPaths);
 				}
 			}
 			
-			action.accept(tmp.toRow());
-			
-			if (!tmp.srcPath.isEmpty() && !tmp.dstPath.isEmpty()) {
-				addAllPrefixes(tmp.srcPath, graph.allPrefixes);
-				addAllPrefixes(tmp.dstPath, graph.allPrefixes);
+			for (final var dst : top.children) {
+				clusterStack.add(0, dst);
+				this.processClusterStack(clusterStack, action);
+				clusterStack.remove(0);
 			}
 		}
 		
-		for (final var dst : top.children) {
-			clusterStack.add(0, dst);
-			processClusterStack(clusterStack, graph, action);
-			clusterStack.remove(0);
-		}
 	}
 	
 	private static final <E> void addAllPrefixes(final List<E> list, final Collection<List<E>> target) {
-		Log.out(1, list);
 		for (var i = 1; i <= list.size(); i += 1) {
 			target.add(list.subList(0, i));
 		}
@@ -231,20 +261,22 @@ public class DsvToGraphviz {
 	private static final class Cluster {
 		
 		private final List<Object> key;
+		private final int hashCode;
 		
-		public int level;
-		
-		public final String name;
+		private int level;
 		
 		private final Collection<Cluster> parents = new LinkedHashSet<>();
 		private final Collection<Cluster> children = new LinkedHashSet<>();
 		private final Collection<Link> links = new LinkedHashSet<>();
-		private final Collection<String> props = new LinkedHashSet<>();
 		
 		public Cluster(final Object key) {
 			this.key = Helpers.cast(key);
+			this.hashCode = key.hashCode();
 			this.level = this.getKeyLevel();
-			this.name = this.getKeyName();
+		}
+		
+		public final Object getKey() {
+			return this.key;
 		}
 		
 		public final int getKeyLevel() {
@@ -268,6 +300,10 @@ public class DsvToGraphviz {
 			return this.level;
 		}
 		
+		public final void updateLevel(final int offset) {
+			this.level += offset;
+		}
+		
 		public final int updateLevel() {
 			if (!this.children.isEmpty()) {
 				final var childrenMaxLevel = this.children.stream()
@@ -281,27 +317,26 @@ public class DsvToGraphviz {
 		
 		@Override
 		public final int hashCode() {
-			return this.key.hashCode();
+			return this.hashCode;
 		}
 		
 		@Override
 		public final boolean equals(final Object obj) {
+			if (this == obj) {
+				return true;
+			}
+			
 			final var that = Cluster.class.cast(obj);
 			
-			return null != that && this.key.equals(that.key);
+			return null != that && this.getKey().equals(that.getKey());
 		}
 		
 		@Override
 		public final String toString() {
-			return Arrays.asList(this.level, this.name).toString();
+			return Arrays.asList(this.getLevel(), this.getKeyName()).toString();
 		}
 		
 	}
-	
-//	private static final void dprint(final List<Link> links) {
-//		Log.out(0);
-//		links.stream().forEach(System.out::println);
-//	}
 	
 	/**
 	 * @author 2oLDNncs 20251011
@@ -310,51 +345,62 @@ public class DsvToGraphviz {
 		
 		private final Graph graph;
 		
-		public final List<String> props;
-		
+		public final Map<String, String> props = new LinkedHashMap<>();
 		public final List<Cluster> srcPath = new ArrayList<>();
 		public final List<Cluster> dstPath = new ArrayList<>();
 		
 		public Link(final Graph graph, final String[] row) {
 			this.graph = graph;
 			final var n = row.length / 2;
-			final var hasProps = ((row.length & 1) != 0) && !Helpers.last(row).isEmpty();
+			
+			graph.setNodeSize(n);
 			
 			final var srcNode = Arrays.asList(Arrays.copyOfRange(row, 0, n));
 			final var dstNode = Arrays.asList(Arrays.copyOfRange(row, n, 2 * n));
-			this.props = hasProps ? newList(Helpers.last(row).split(graph.propDelimiter)) : Collections.emptyList();
 			
-			graph.nodeSize = srcNode.size();
-			
-			for (var i = 0; i < srcNode.size(); i += 1) {
+			for (var i = 0; i < n; i += 1) {
 				this.tryAddCluster(this.srcPath, srcNode, i);
 				this.tryAddCluster(this.dstPath, dstNode, i);
 			}
 			
-			if (this.dstPath.isEmpty()) {
-				graph.pathProps.put(this.srcPath, this.props);
+			final var hasProps = ((row.length & 1) != 0) && !Helpers.last(row).isEmpty();
+			
+			if (hasProps) {
+				for (final var prop : Helpers.last(row).split(graph.propDelimiter)) {
+					final var kv = prop.split("=", 2);
+					
+					if (2 != kv.length) {
+						throw new IllegalArgumentException(String.format("Invalid prop: %s", prop));
+					}
+					
+					this.props.put(kv[0], kv[1]);
+				}
 			}
 			
 			if (!this.srcPath.isEmpty()) {
 				if (!this.dstPath.isEmpty()) {
 					this.srcPath.get(0).links.add(this);
-					
-					if (!this.srcPath.get(0).key.equals(this.dstPath.get(0).key)) {
-						this.srcPath.get(0).addChild(this.dstPath.get(0));
-					}
 				} else {
-					this.srcPath.get(0).props.addAll(this.props);
+					graph.pathProps.put(this.srcPath, this.props);
 				}
 			}
 		}
 		
 		private Link(final Graph graph,
 				final List<Cluster> srcPath, final List<Cluster> dstPath,
-				final List<String> props) {
+				final Map<String, String> props) {
 			this.graph = graph;
 			this.srcPath.addAll(srcPath);
 			this.dstPath.addAll(dstPath);
-			this.props = props;
+			this.props.putAll(props);
+		}
+		
+		public final void tryParentSrcToDst() {
+			if (!this.srcPath.isEmpty() && !this.dstPath.isEmpty()) {
+				if (!this.srcPath.get(0).equals(this.dstPath.get(0))) {
+					this.srcPath.get(0).addChild(this.dstPath.get(0));
+				}
+			}
 		}
 		
 		private final void tryAddCluster(final List<Cluster> path, final List<String> node, final int i) {
@@ -374,17 +420,10 @@ public class DsvToGraphviz {
 		}
 		
 		public final void reorgDirBack() {
-			Log.out(1, Arrays.toString(this.toRow()));
-			
-			for (final var propIt = this.props.iterator(); propIt.hasNext();) {
+			for (final var propIt = this.props.entrySet().iterator(); propIt.hasNext();) {
 				final var prop = propIt.next();
-				final var kv = prop.split("=", 2);
 				
-				if (2 != kv.length) {
-					throw new IllegalArgumentException(String.format("Invalid prop: %s", prop));
-				}
-				
-				if ("dir".equals(kv[0]) && "back".equals(kv[1])) {
+				if ("dir".equals(prop.getKey()) && "back".equals(prop.getValue())) {
 					Helpers.swap(this.srcPath, this.dstPath);
 					propIt.remove();
 					break;
@@ -393,7 +432,7 @@ public class DsvToGraphviz {
 		}
 		
 		public final String[] toRow() {
-			return makeRow(this.graph, this.srcPath, this.dstPath, this.props);
+			return this.graph.makeRow(this.srcPath, this.dstPath, this.props);
 		}
 		
 		@Override
@@ -401,24 +440,6 @@ public class DsvToGraphviz {
 			return Arrays.toString(this.toRow());
 		}
 		
-	}
-	
-	public static final String[] makeRow(final Graph graph, final List<Cluster> srcPath, final List<Cluster> dstPath, final List<String> props) {
-		final var result = new String[2 * graph.nodeSize + 1];
-		
-		Arrays.fill(result, "");
-		
-		for (var i = 0; i < srcPath.size(); i += 1) {
-			result[srcPath.get(i).getLevel()] = srcPath.get(i).getKeyName();
-		}
-		
-		for (var i = 0; i < dstPath.size(); i += 1) {
-			result[graph.nodeSize + dstPath.get(i).getLevel()] = dstPath.get(i).getKeyName();
-		}
-		
-		result[result.length - 1] = String.join(graph.propDelimiter, props);
-		
-		return result;
 	}
 	
 	private static final void processRows(final ArgsParser ap, final Consumer<String[]> action) throws IOException {
@@ -439,7 +460,6 @@ public class DsvToGraphviz {
 	}
 	
 	private static final void processRow(final String[] row, final String propDelimiter, final GraphvizPrinter gvp) {
-		Log.outf(1, "%s", Arrays.toString(row));
 		final var nodeSize = row.length / 2;
 		final var isArc = !String.join("", Arrays.copyOfRange(row, nodeSize, 2 * nodeSize)).isEmpty();
 		final var hasProps = 1 == (row.length & 1);
