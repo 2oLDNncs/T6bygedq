@@ -8,12 +8,13 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
+import java.util.function.Function;
+import java.util.stream.IntStream;
 
 import t6bygedq.lib.ArgsParser;
 import t6bygedq.lib.GraphvizPrinter;
@@ -25,15 +26,6 @@ import t6bygedq.lib.Log;
  */
 public class DsvToGraphviz {
 	
-	/**
-	 * @author 2oLDNncs 20251010
-	 */
-	public static enum Reorg {
-		
-		OFF, FOLD;
-		
-	}
-	
 	public static final String ARG_IN = "-In";
 	public static final String ARG_SHEET = "-Sheet";
 	public static final String ARG_DELIMITER1 = "-Delimiter1";
@@ -44,6 +36,7 @@ public class DsvToGraphviz {
 	public static final String ARG_RANKDIR = "-Rankdir";
 	public static final String ARG_RANKSEP = "-Ranksep";
 	public static final String ARG_REORG = "-Reorg";
+	public static final String ARG_CASE_SENSITIVE = "-CaseSensitive";
 	public static final String ARG_OUT = "-Out";
 	
 	public static final void main(final String... args) throws IOException {
@@ -59,6 +52,7 @@ public class DsvToGraphviz {
 		ap.setDefault(ARG_RANKDIR, "TB");
 		ap.setDefault(ARG_RANKSEP, 0.75);
 		ap.setDefault(ARG_REORG, Reorg.OFF);
+		ap.setDefault(ARG_CASE_SENSITIVE, true);
 		ap.setDefault(ARG_OUT, "data/test_gv_dsv.gv");
 		
 		Log.outf(0, "%s.main", DsvToGraphviz.class.getSimpleName());
@@ -79,6 +73,7 @@ public class DsvToGraphviz {
 			final var gvp = new GvPrinter(out);
 			final var propDelimiter = ap.getString(ARG_DELIMITER2);
 			final var reorg = ap.<Reorg>getEnum(ARG_REORG);
+			final var caseSensitive = ap.getBoolean(ARG_CASE_SENSITIVE);
 			
 			gvp.begin(ap.getBoolean(ARG_STRICT));
 			gvp.graphPropLayout(ap.getString(ARG_LAYOUT));
@@ -88,7 +83,7 @@ public class DsvToGraphviz {
 			
 			try {
 				final var graph = new GvGraph();
-				final var linkParser = new GvLink.LinkParser(graph, propDelimiter);
+				final var linkParser = new GvLink.LinkParser(graph, propDelimiter, caseSensitive);
 				
 				processRows(ap, row -> {
 					graph.addLink(linkParser.parse(row));
@@ -102,6 +97,15 @@ public class DsvToGraphviz {
 			}
 		}
 		Log.done();
+	}
+	
+	/**
+	 * @author 2oLDNncs 20251010
+	 */
+	public static enum Reorg {
+		
+		OFF, FOLD;
+		
 	}
 	
 	/**
@@ -168,7 +172,7 @@ public class DsvToGraphviz {
 	public static final class GvGraph {
 		
 		private final List<GvLink> links = new ArrayList<>();
-		private final Map<Object, GvCluster> clusters = new HashMap<>();
+		private final Map<Object, GvCluster> clusters = new LinkedHashMap<>();
 		private final Map<List<GvCluster>, GvPath> paths = new LinkedHashMap<>();
 		
 		private final Map<GvPath, Object> gvTrees = new LinkedHashMap<>();
@@ -221,11 +225,11 @@ public class DsvToGraphviz {
 		
 		public final Map<String, String> findPathProps(final GvPath path) {
 			final var result = new LinkedHashMap<String, String>();
-			final var pathClusters = path.getNest();
+			final var nest = path.getNest();
 			
-			for (var j = pathClusters.size(); 0 < j; j -= 1) {
+			for (var j = nest.size(); 0 < j; j -= 1) {
 				for (var i = j - 1; 0 <= i; i -= 1) {
-					final var p = this.findPath(pathClusters.subList(i, j));
+					final var p = this.findPath(nest.subList(i, j));
 					
 					if (null != p) {
 						p.getProps().forEach((k, v) -> result.computeIfAbsent(k, __ -> v));
@@ -253,10 +257,8 @@ public class DsvToGraphviz {
 						implicitLink.srcNest.add(0, c);
 					}
 					
-					if (implicitLink.hasDst()) {
-						if (!implicitLink.dstNest.contains(c)) {
-							implicitLink.dstNest.add(0, c);
-						}
+					if (!implicitLink.dstNest.contains(c)) {
+						implicitLink.dstNest.add(0, c);
 					}
 				}
 				
@@ -298,12 +300,16 @@ public class DsvToGraphviz {
 		
 		private final PrintStream out;
 		
+		private int state = 1;
+		
 		public GvPrinter(final PrintStream out) {
 			this.out = out;
 		}
 		
 		public final void begin(final boolean strict) {
-			out.println(String.format("%sdigraph G { // Use strict to merge duplicate edges", strict ? "strict " : ""));
+			this.checkState(0b0001);
+			this.printlnf("%sdigraph G { // Use strict to merge duplicate edges", strict ? "strict " : "");
+			this.nextState();
 		}
 		
 		public final void graphPropLayout(final String layout) {
@@ -323,19 +329,38 @@ public class DsvToGraphviz {
 		}
 		
 		public final void graphProp(final String key, final Object value, final String comment) {
-			this.out.println(String.format("	%s=%s // %s", key, value, comment));
+			this.checkState(0b0010);
+			this.printlnf("	%s=%s // %s", key, value, comment);
 		}
 		
 		public final void end() {
+			this.checkState(0b0110);
 			this.out.println("}");
+			this.nextState();
+		}
+		
+		private final void printlnf(final String format, final Object... args) {
+			this.out.println(String.format(format, args));
+		}
+		
+		private final void checkState(final int validStates) {
+			if (0 == (validStates & this.state)) {
+				throw new IllegalStateException(Integer.toBinaryString(this.state));
+			}
+		}
+		
+		private final void nextState() {
+			this.state <<= 1;
 		}
 		
 		public final void printGraph(final GvGraph graph) {
+			this.checkState(0b0010);
 			this.printLinks(graph);
 			this.printTrees(graph);
+			this.nextState();
 		}
 		
-		public final void printLinks(final GvGraph graph) {
+		private final void printLinks(final GvGraph graph) {
 			graph.gvLinks.forEach((src, dsts) -> {
 				final var srcId = src.getId();
 				dsts.forEach((dst, props) -> {
@@ -347,11 +372,11 @@ public class DsvToGraphviz {
 			});
 		}
 		
-		public final void printTrees(final GvGraph graph) {
+		private final void printTrees(final GvGraph graph) {
 			this.printTrees(graph, graph.gvTrees);
 		}
 		
-		public final void printTrees(final GvGraph graph, final Map<GvPath, Object> trees) {
+		private final void printTrees(final GvGraph graph, final Map<GvPath, Object> trees) {
 			trees.forEach((path, content) -> {
 				final var subtrees = Helpers.<Map<GvPath, Object>>cast(content);
 				final var pathId = path.getId();
@@ -502,9 +527,12 @@ public class DsvToGraphviz {
 			
 			private final String propDelimiter;
 			
-			public LinkParser(final GvGraph graph, final String propDelimiter) {
+			private final Function<String, CharSequence> makeName;
+			
+			public LinkParser(final GvGraph graph, final String propDelimiter, final boolean caseSensitive) {
 				this.graph = graph;
 				this.propDelimiter = propDelimiter;
+				this.makeName = caseSensitive ? String.class::cast : CaseInsensitiveName::new;
 			}
 			
 			public final GvLink parse(final String[] row) {
@@ -550,10 +578,73 @@ public class DsvToGraphviz {
 				final var name = node.get(i);
 				
 				if (!name.isEmpty()) {
-					path.add(this.graph.getCluster(i, name));
+					path.add(this.graph.getCluster(i, this.makeName.apply(name)));
 				}
 			}
 			
+			/**
+			 * @author 2oLDNncs 20251022
+			 */
+			public static final class CaseInsensitiveName implements CharSequence {
+				
+				private final String string;
+				private final String lowerCase;
+				private final int hashCode;
+				
+				public CaseInsensitiveName(final String string) {
+					this.string = string;
+					this.lowerCase = this.string.toLowerCase();
+					this.hashCode = this.lowerCase.hashCode();
+				}
+				
+				@Override
+				public final IntStream chars() {
+					return this.string.chars();
+				}
+				
+				@Override
+				public final IntStream codePoints() {
+					return this.string.codePoints();
+				}
+				
+				@Override
+				public final int hashCode() {
+					return this.hashCode;
+				}
+				
+				@Override
+				public final boolean equals(final Object obj) {
+					if (this == obj) {
+						return true;
+					}
+					
+					final var that = CaseInsensitiveName.class.cast(obj);
+					
+					return null != that && this.lowerCase.equals(that.lowerCase);
+				}
+				
+				@Override
+				public final String toString() {
+					return this.string;
+				}
+				
+				@Override
+				public final CharSequence subSequence(final int start, final int end) {
+					return this.string.subSequence(start, end);
+				}
+				
+				@Override
+				public final int length() {
+					return this.string.length();
+				}
+				
+				@Override
+				public final char charAt(final int index) {
+					return this.string.charAt(index);
+				}
+				
+			}
+						
 		}
 				
 	}
