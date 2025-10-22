@@ -47,6 +47,11 @@ public final class Helpers {
 		return Collectors.toCollection(ArrayList::new);
 	}
 	
+	@SafeVarargs
+	public static final <E> List<E> newList(final E... elements) {
+		return new ArrayList<>(Arrays.asList(elements));
+	}
+	
 	public static final <E> E[] array(@SuppressWarnings("unchecked") final E... elements) {
 		return elements;
 	}

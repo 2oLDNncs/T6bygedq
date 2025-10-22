@@ -76,41 +76,27 @@ public class DsvToGraphviz {
 		
 		Log.beginf(0, "Processing");
 		try (final var out = getPrintStream(ap, ARG_OUT)) {
+			final var gvp = new GvPrinter(out);
 			final var propDelimiter = ap.getString(ARG_DELIMITER2);
-			final var gvp = new GraphvizPrinter(out);
 			final var reorg = ap.<Reorg>getEnum(ARG_REORG);
 			
-			gvp.begin(ap.getBoolean(ARG_STRICT), ap.getString(ARG_LAYOUT), ap.getBoolean(ARG_COMPOUND), ap.getString(ARG_RANKDIR));
-			gvp.graphProp("ranksep", ap.getDouble(ARG_RANKSEP), "In dot, sets the desired rank separation, in inches");
-			
-			final Consumer<String[]> gvpAction = row -> processRow(row, propDelimiter, gvp);
+			gvp.begin(ap.getBoolean(ARG_STRICT));
+			gvp.graphPropLayout(ap.getString(ARG_LAYOUT));
+			gvp.graphPropCompound(ap.getBoolean(ARG_COMPOUND));
+			gvp.graphPropRankdir(ap.getString(ARG_RANKDIR));
+			gvp.graphPropRanksep(ap.getDouble(ARG_RANKSEP));
 			
 			try {
-				if (Reorg.FOLD == reorg) {
-					final var graph = new Graph(propDelimiter);
-					
-					processRows(ap, row -> {
-						graph.allLinks.add(new Link(graph, row));
-					});
-					
-//					graph.allLinks.forEach(link -> gvpAction.accept(link.toRow()));
-					graph.allLinks.forEach(Link::tryParentSrcToDst);
-					graph.collectRoots();
-					graph.updateLevels();
-					graph.reorgDirBack();
-					
-					graph.roots.forEach(root -> graph.processClusterStack(newList(root), gvpAction));
-					
-					graph.allPaths.forEach(prefix -> {
-						final var prefixProps = graph.findPathProps(prefix);
-						
-						if (!prefixProps.isEmpty()) {
-							gvpAction.accept(graph.makeRow(prefix, Collections.emptyList(), prefixProps));
-						}
-					});
-				} else {
-					processRows(ap, gvpAction);
-				}
+				final var graph = new GvGraph();
+				final var linkParser = new GvLink.LinkParser(graph, propDelimiter);
+				
+				processRows(ap, row -> {
+					graph.addLink(linkParser.parse(row));
+				});
+				
+				graph.prepare(reorg);
+				
+				gvp.printGraph(graph);
 			} finally {
 				gvp.end();
 			}
@@ -119,66 +105,130 @@ public class DsvToGraphviz {
 	}
 	
 	/**
+	 * @author 2oLDNncs 20251022
+	 */
+	public static final class GvPath {
+		
+		private final List<GvCluster> nest;
+		
+		private final int id;
+		
+		private final Map<String, String> props = new LinkedHashMap<>();
+		
+		private final CharSequence lastName;
+		
+		public GvPath(final List<GvCluster> nest, final int id) {
+			this.nest = nest;
+			this.id = id;
+			this.lastName = Helpers.last(nest).getKeyName();
+		}
+		
+		public final List<GvCluster> getNest() {
+			return this.nest;
+		}
+		
+		public final int getId() {
+			return this.id;
+		}
+		
+		public final Map<String, String> getProps() {
+			return this.props;
+		}
+		
+		public final CharSequence getLastName() {
+			return this.lastName;
+		}
+		
+		@Override
+		public final boolean equals(final Object obj) {
+			if (this == obj) {
+				return true;
+			}
+			
+			final var that = GvPath.class.cast(obj);
+			
+			return null != that && this.getNest().equals(that.getNest());
+		}
+		
+		@Override
+		public final int hashCode() {
+			return this.getNest().hashCode();
+		}
+		
+		@Override
+		public final String toString() {
+			return this.getNest().toString();
+		}
+		
+	}
+	
+	/**
 	 * @author 2oLDNncs 20251019
 	 */
-	public static final class Graph {
+	public static final class GvGraph {
 		
-		public final String propDelimiter;
+		private final List<GvLink> links = new ArrayList<>();
+		private final Map<Object, GvCluster> clusters = new HashMap<>();
+		private final Map<List<GvCluster>, GvPath> paths = new LinkedHashMap<>();
 		
-		public Graph(final String propDelimiter) {
-			this.propDelimiter = propDelimiter;
+		private final Map<GvPath, Object> gvTrees = new LinkedHashMap<>();
+		private final Map<GvPath, Map<GvPath, Map<String, String>>> gvLinks = new LinkedHashMap<>();
+		
+		public final void addLink(final GvLink link) {
+			this.links.add(link);
 		}
 		
-		public final List<Link> allLinks = new ArrayList<>();
-		public final Map<Object, Cluster> allClusters = new HashMap<>();
-		public final Map<List<Cluster>, Map<String, String>> pathProps = new HashMap<>();
-		public final Collection<List<Cluster>> allPaths = new LinkedHashSet<>();
-		public final Collection<Cluster> roots = new LinkedHashSet<>();
-		private int nodeSize = 0;
-		
-		public final int getNodeSize() {
-			return this.nodeSize;
+		public final GvCluster getCluster(final int level, final CharSequence name) {
+			return this.clusters.computeIfAbsent(Arrays.asList(level, name), GvCluster::new);
 		}
 		
-		public final void setNodeSize(final int nodeSize) {
-			if (0 == this.getNodeSize()) {
-				this.nodeSize = nodeSize;
-			} else if (this.getNodeSize() != nodeSize) {
-				throw new IllegalArgumentException(String.format("Invalid node size: Expected %s Actual %s", this.getNodeSize(), nodeSize));
+		public final GvPath findPath(final List<GvCluster> clusters) {
+			return this.paths.get(clusters);
+		}
+		
+		public final GvPath getPath(final List<GvCluster> nest) {
+			return this.paths.computeIfAbsent(nest, k -> new GvPath(k, this.paths.size() + 1));
+		}
+		
+		public final void prepare(final Reorg reorg) {
+			if (Reorg.FOLD == reorg) {
+				this.fold();
+				this.reorgDirBack();
+				this.preparePaths();
+			} else {
+				this.prepapreLinks();
 			}
 		}
 		
-		public final void collectRoots() {
-			this.allClusters.values().stream()
-					.filter(Cluster::isRoot)
-					.forEach(this.roots::add);
+		private final void fold() {
+			this.links.forEach(GvLink::tryParentSrcToDst);
 		}
 		
-		public final void updateLevels() {
-			this.roots.forEach(Cluster::updateLevel);
-			
-			final var paddingSize = -this.roots.stream()
-					.mapToInt(Cluster::getLevel)
-					.min().getAsInt();
-			this.nodeSize += paddingSize;
-			
-			// fix negative levels after update
-			this.allClusters.values().forEach(cluster -> cluster.updateLevel(paddingSize));
+		private final void reorgDirBack() {
+			this.links.forEach(GvLink::reorgDirBack);
 		}
 		
-		public final void reorgDirBack() {
-			this.allLinks.forEach(Link::reorgDirBack);
+		private final void preparePaths() {
+			this.clusters.values().stream()
+			.filter(GvCluster::isRoot)
+			.map(Helpers::newList)
+			.forEach(this::prepareClusterStack);
 		}
 		
-		public final Map<String, String> findPathProps(final List<Cluster> path) {
+		private final void prepapreLinks() {
+			this.links.forEach(this::prepareLink);
+		}
+		
+		public final Map<String, String> findPathProps(final GvPath path) {
 			final var result = new LinkedHashMap<String, String>();
+			final var pathClusters = path.getNest();
 			
-			for (var j = path.size(); 0 < j; j -= 1) {
+			for (var j = pathClusters.size(); 0 < j; j -= 1) {
 				for (var i = j - 1; 0 <= i; i -= 1) {
-					final var props = this.pathProps.get(path.subList(i, j));
+					final var p = this.findPath(pathClusters.subList(i, j));
 					
-					if (null != props) {
-						props.forEach((k, v) -> result.computeIfAbsent(k, __ -> v));
+					if (null != p) {
+						p.getProps().forEach((k, v) -> result.computeIfAbsent(k, __ -> v));
 					}
 				}
 			}
@@ -186,133 +236,179 @@ public class DsvToGraphviz {
 			return result;
 		}
 		
-		public final String[] makeRow(final List<Cluster> srcPath, final List<Cluster> dstPath, final Map<String, String> props) {
-			final var result = new String[2 * this.nodeSize + 1];
-			
-			Arrays.fill(result, "");
-			
-			for (var i = 0; i < srcPath.size(); i += 1) {
-				result[srcPath.get(i).getLevel()] = srcPath.get(i).getKeyName();
-			}
-			
-			for (var i = 0; i < dstPath.size(); i += 1) {
-				result[this.nodeSize + dstPath.get(i).getLevel()] = dstPath.get(i).getKeyName();
-			}
-			
-			result[result.length - 1] = props.entrySet().stream()
-					.map(Object::toString)
-					.reduce((e1, e2) -> e1 + this.propDelimiter + e2)
-					.orElse("");
-			
-			return result;
-		}
-		
-		public final void processClusterStack(final List<Cluster> clusterStack, final Consumer<String[]> action) {
+		private final void prepareClusterStack(final List<GvCluster> clusterStack) {
 			final var top = clusterStack.get(0);
 			
 			for (final var link : top.links) {
-				if (!link.dstPath.isEmpty() && !top.equals(link.dstPath.get(0))) {
-					clusterStack.add(0, link.dstPath.get(0));
-					this.processClusterStack(clusterStack, action);
+				if (!link.dstNest.isEmpty() && !top.equals(link.dstNest.get(0))) {
+					clusterStack.add(0, link.dstNest.get(0));
+					this.prepareClusterStack(clusterStack);
 					clusterStack.remove(0);
 				}
 				
-				final var tmp = link.dup();
+				final var implicitLink = link.dup();
 				
 				for (final var c : clusterStack) {
-					tmp.srcPath.add(0, c);
+					if (!implicitLink.srcNest.contains(c)) {
+						implicitLink.srcNest.add(0, c);
+					}
 					
-					if (tmp.hasDst()) {
-						tmp.dstPath.add(0, c);
+					if (implicitLink.hasDst()) {
+						if (!implicitLink.dstNest.contains(c)) {
+							implicitLink.dstNest.add(0, c);
+						}
 					}
 				}
 				
-				action.accept(tmp.toRow());
+				this.prepareLink(implicitLink);
+			}
+		}
+		
+		public final void prepareLink(final GvLink link) {
+			if (link.hasDst()) {
+				this.addPath(link.dstNest);
 				
-				if (!tmp.srcPath.isEmpty() && !tmp.dstPath.isEmpty()) {
-					addAllPrefixes(tmp.srcPath, this.allPaths);
-					addAllPrefixes(tmp.dstPath, this.allPaths);
+				if (link.hasSrc()) {
+					this.addPath(link.srcNest);
+					
+					this.gvLinks
+					.computeIfAbsent(this.getPath(link.srcNest), __ -> new LinkedHashMap<>())
+					.computeIfAbsent(this.getPath(link.dstNest), __ -> new LinkedHashMap<>())
+					.putAll(link.props);
 				}
 			}
+		}
+		
+		private final void addPath(final List<GvCluster> path) {
+			Map<GvPath, Object> t = this.gvTrees;
+			final var p = new ArrayList<GvCluster>();
 			
-			for (final var dst : top.children) {
-				clusterStack.add(0, dst);
-				this.processClusterStack(clusterStack, action);
-				clusterStack.remove(0);
+			for (final var current : path) {
+				p.add(current);
+				t = Helpers.cast(t.computeIfAbsent(this.getPath(new ArrayList<>(p)), __ -> new LinkedHashMap<>()));
 			}
 		}
 		
 	}
 	
-	private static final <E> void addAllPrefixes(final List<E> list, final Collection<List<E>> target) {
-		for (var i = 1; i <= list.size(); i += 1) {
-			target.add(list.subList(0, i));
+	/**
+	 * @author 2oLDNncs 20251022
+	 */
+	public static final class GvPrinter {
+		
+		private final PrintStream out;
+		
+		public GvPrinter(final PrintStream out) {
+			this.out = out;
 		}
-	}
-	
-	@SafeVarargs
-	public static final <E> List<E> newList(final E... elements) {
-		return new ArrayList<>(Arrays.asList(elements));
+		
+		public final void begin(final boolean strict) {
+			out.println(String.format("%sdigraph G { // Use strict to merge duplicate edges", strict ? "strict " : ""));
+		}
+		
+		public final void graphPropLayout(final String layout) {
+			this.graphProp("layout", layout, "Use dot for clustering");
+		}
+		
+		public final void graphPropCompound(final boolean compound) {
+			this.graphProp("compound", compound, "If true, allow edges between clusters");
+		}
+		
+		public final void graphPropRankdir(final String rankdir) {
+			this.graphProp("rankdir", rankdir, "TB (Top-Bottom) or LR (Left-Right)");
+		}
+		
+		public final void graphPropRanksep(final double ranksep) {
+			this.graphProp("ranksep", ranksep, "In dot, sets the desired rank separation, in inches");
+		}
+		
+		public final void graphProp(final String key, final Object value, final String comment) {
+			this.out.println(String.format("	%s=%s // %s", key, value, comment));
+		}
+		
+		public final void end() {
+			this.out.println("}");
+		}
+		
+		public final void printGraph(final GvGraph graph) {
+			this.printLinks(graph);
+			this.printTrees(graph);
+		}
+		
+		public final void printLinks(final GvGraph graph) {
+			graph.gvLinks.forEach((src, dsts) -> {
+				final var srcId = src.getId();
+				dsts.forEach((dst, props) -> {
+					final var dstId = dst.getId();
+					this.out.println(String.format("\t%s -> %s [ltail=cluster_%s,lhead=cluster_%s,%s]",
+							srcId, dstId, srcId, dstId,
+							GraphvizPrinter.formatProps(props)));
+				});
+			});
+		}
+		
+		public final void printTrees(final GvGraph graph) {
+			this.printTrees(graph, graph.gvTrees);
+		}
+		
+		public final void printTrees(final GvGraph graph, final Map<GvPath, Object> trees) {
+			trees.forEach((path, content) -> {
+				final var subtrees = Helpers.<Map<GvPath, Object>>cast(content);
+				final var pathId = path.getId();
+				final var pathProps = graph.findPathProps(path);
+				final var indent = String.join("", Collections.nCopies(path.getNest().size(), "\t"));
+				
+				pathProps.computeIfAbsent("label", __ -> path.getLastName().toString());
+				
+				if (!subtrees.isEmpty()) {
+					this.out.println(String.format("%ssubgraph cluster_%s {", indent, pathId));
+					pathProps.forEach((propKey, propValue) -> {
+						this.out.println(String.format("%s\t%s=%s", indent, propKey, GraphvizPrinter.formatPropValue(propValue)));
+					});
+					this.out.println(String.format("%s\t%s [label=\"\",shape=point,width=0,height=0]", indent, pathId));
+					this.printTrees(graph, subtrees);
+					this.out.println(String.format("%s}", indent));
+				} else {
+					this.out.println(String.format("%s\t%s [%s]", indent, pathId,
+							GraphvizPrinter.formatProps(pathProps)));
+				}
+			});
+		}
+			
+		
 	}
 	
 	/**
 	 * @author 2oLDNncs 20251014
 	 */
-	private static final class Cluster {
+	private static final class GvCluster {
 		
 		private final List<Object> key;
 		private final int hashCode;
+		private final Collection<GvCluster> parents = new LinkedHashSet<>();
+		private final Collection<GvCluster> children = new LinkedHashSet<>();
+		private final Collection<GvLink> links = new LinkedHashSet<>();
 		
-		private int level;
-		
-		private final Collection<Cluster> parents = new LinkedHashSet<>();
-		private final Collection<Cluster> children = new LinkedHashSet<>();
-		private final Collection<Link> links = new LinkedHashSet<>();
-		
-		public Cluster(final Object key) {
+		public GvCluster(final Object key) {
 			this.key = Helpers.cast(key);
 			this.hashCode = key.hashCode();
-			this.level = this.getKeyLevel();
 		}
 		
 		public final Object getKey() {
 			return this.key;
 		}
 		
-		public final int getKeyLevel() {
-			return Helpers.cast(this.key.get(0));
-		}
-		
-		public final String getKeyName() {
+		public final CharSequence getKeyName() {
 			return Helpers.cast(this.key.get(1));
 		}
 		
-		public final void addChild(final Cluster child) {
+		public final void addChild(final GvCluster child) {
 			this.children.add(child);
 			child.parents.add(this);
 		}
 		
 		public final boolean isRoot() {
 			return this.parents.isEmpty();
-		}
-		
-		public final int getLevel() {
-			return this.level;
-		}
-		
-		public final void updateLevel(final int offset) {
-			this.level += offset;
-		}
-		
-		public final int updateLevel() {
-			if (!this.children.isEmpty()) {
-				final var childrenMaxLevel = this.children.stream()
-						.mapToInt(Cluster::updateLevel)
-						.min().getAsInt();
-				this.level = Math.min(this.level, childrenMaxLevel - 1);
-			}
-			
-			return this.level;
 		}
 		
 		@Override
@@ -326,14 +422,14 @@ public class DsvToGraphviz {
 				return true;
 			}
 			
-			final var that = Cluster.class.cast(obj);
+			final var that = GvCluster.class.cast(obj);
 			
 			return null != that && this.getKey().equals(that.getKey());
 		}
 		
 		@Override
 		public final String toString() {
-			return Arrays.asList(this.getLevel(), this.getKeyName()).toString();
+			return this.getKey().toString();
 		}
 		
 	}
@@ -341,82 +437,41 @@ public class DsvToGraphviz {
 	/**
 	 * @author 2oLDNncs 20251011
 	 */
-	private static final class Link {
+	private static final class GvLink {
 		
-		private final Graph graph;
+		private List<GvCluster> srcNest = new ArrayList<>();
+		private List<GvCluster> dstNest = new ArrayList<>();
+		private final Map<String, String> props = new LinkedHashMap<>();
 		
-		public final Map<String, String> props = new LinkedHashMap<>();
-		public final List<Cluster> srcPath = new ArrayList<>();
-		public final List<Cluster> dstPath = new ArrayList<>();
-		
-		public Link(final Graph graph, final String[] row) {
-			this.graph = graph;
-			final var n = row.length / 2;
-			
-			graph.setNodeSize(n);
-			
-			final var srcNode = Arrays.asList(Arrays.copyOfRange(row, 0, n));
-			final var dstNode = Arrays.asList(Arrays.copyOfRange(row, n, 2 * n));
-			
-			for (var i = 0; i < n; i += 1) {
-				this.tryAddCluster(this.srcPath, srcNode, i);
-				this.tryAddCluster(this.dstPath, dstNode, i);
-			}
-			
-			final var hasProps = ((row.length & 1) != 0) && !Helpers.last(row).isEmpty();
-			
-			if (hasProps) {
-				for (final var prop : Helpers.last(row).split(graph.propDelimiter)) {
-					final var kv = prop.split("=", 2);
-					
-					if (2 != kv.length) {
-						throw new IllegalArgumentException(String.format("Invalid prop: %s", prop));
-					}
-					
-					this.props.put(kv[0], kv[1]);
-				}
-			}
-			
-			if (!this.srcPath.isEmpty()) {
-				if (!this.dstPath.isEmpty()) {
-					this.srcPath.get(0).links.add(this);
-				} else {
-					graph.pathProps.put(this.srcPath, this.props);
-				}
-			}
+		private GvLink() {
+			//pass
 		}
 		
-		private Link(final Graph graph,
-				final List<Cluster> srcPath, final List<Cluster> dstPath,
+		private GvLink(final List<GvCluster> srcNest, final List<GvCluster> dstNest,
 				final Map<String, String> props) {
-			this.graph = graph;
-			this.srcPath.addAll(srcPath);
-			this.dstPath.addAll(dstPath);
+			this.srcNest.addAll(srcNest);
+			this.dstNest.addAll(dstNest);
 			this.props.putAll(props);
 		}
 		
 		public final void tryParentSrcToDst() {
-			if (!this.srcPath.isEmpty() && !this.dstPath.isEmpty()) {
-				if (!this.srcPath.get(0).equals(this.dstPath.get(0))) {
-					this.srcPath.get(0).addChild(this.dstPath.get(0));
+			if (this.hasSrc() && this.hasDst()) {
+				if (!this.srcNest.get(0).equals(this.dstNest.get(0))) {
+					this.srcNest.get(0).addChild(this.dstNest.get(0));
 				}
 			}
 		}
 		
-		private final void tryAddCluster(final List<Cluster> path, final List<String> node, final int i) {
-			final var name = node.get(i);
-			
-			if (!name.isEmpty()) {
-				path.add(this.graph.allClusters.computeIfAbsent(Arrays.asList(i, name), Cluster::new));
-			}
+		public final boolean hasSrc() {
+			return !this.srcNest.isEmpty();
 		}
 		
 		public final boolean hasDst() {
-			return !this.dstPath.isEmpty();
+			return !this.dstNest.isEmpty();
 		}
 		
-		public final Link dup() {
-			return new Link(this.graph, this.srcPath, this.dstPath, this.props);
+		public final GvLink dup() {
+			return new GvLink(this.srcNest, this.dstNest, this.props);
 		}
 		
 		public final void reorgDirBack() {
@@ -424,22 +479,83 @@ public class DsvToGraphviz {
 				final var prop = propIt.next();
 				
 				if ("dir".equals(prop.getKey()) && "back".equals(prop.getValue())) {
-					Helpers.swap(this.srcPath, this.dstPath);
+					var tmp = this.srcNest;
+					this.srcNest = this.dstNest;
+					this.dstNest = tmp;
 					propIt.remove();
 					break;
 				}
 			}
 		}
 		
-		public final String[] toRow() {
-			return this.graph.makeRow(this.srcPath, this.dstPath, this.props);
-		}
-		
 		@Override
 		public final String toString() {
-			return Arrays.toString(this.toRow());
+			return String.format("%s -> %s %s", this.srcNest, this.dstNest, this.props);
 		}
 		
+		/**
+		 * @author 2oLDNncs 20251022
+		 */
+		public static final class LinkParser {
+			
+			private final GvGraph graph;
+			
+			private final String propDelimiter;
+			
+			public LinkParser(final GvGraph graph, final String propDelimiter) {
+				this.graph = graph;
+				this.propDelimiter = propDelimiter;
+			}
+			
+			public final GvLink parse(final String[] row) {
+				final var result = new GvLink();
+				final var n = row.length / 2;
+				
+				final var srcNode = Arrays.asList(Arrays.copyOfRange(row, 0, n));
+				final var dstNode = Arrays.asList(Arrays.copyOfRange(row, n, 2 * n));
+				
+				for (var i = 0; i < n; i += 1) {
+					this.updatePath(result.srcNest, srcNode, i);
+					this.updatePath(result.dstNest, dstNode, i);
+				}
+				
+				final var hasProps = ((row.length & 1) != 0) && !Helpers.last(row).isEmpty();
+				
+				if (hasProps) {
+					for (final var prop : Helpers.last(row).split(this.propDelimiter)) {
+						final var kv = prop.split("=", 2);
+						
+						if (2 != kv.length) {
+							throw new IllegalArgumentException(String.format("Invalid prop: %s", prop));
+						}
+						
+						result.props.put(kv[0], kv[1]);
+					}
+				}
+				
+				if (result.hasSrc()) {
+					if (result.hasDst()) {
+						result.srcNest.get(0).links.add(result);
+					} else {
+						this.graph.getPath(result.srcNest).getProps().putAll(result.props);
+					}
+				} else if (result.hasDst()) {
+					this.graph.getPath(result.dstNest).getProps().putAll(result.props);
+				}
+				
+				return result;
+			}
+			
+			private final void updatePath(final List<GvCluster> path, final List<String> node, final int i) {
+				final var name = node.get(i);
+				
+				if (!name.isEmpty()) {
+					path.add(this.graph.getCluster(i, name));
+				}
+			}
+			
+		}
+				
 	}
 	
 	private static final void processRows(final ArgsParser ap, final Consumer<String[]> action) throws IOException {
@@ -457,42 +573,6 @@ public class DsvToGraphviz {
 		Files.lines(ap.getPath(dsvFileKey)).forEach(line -> {
 			action.accept(line.split(delimiter, -1));
 		});
-	}
-	
-	private static final void processRow(final String[] row, final String propDelimiter, final GraphvizPrinter gvp) {
-		final var nodeSize = row.length / 2;
-		final var isArc = !String.join("", Arrays.copyOfRange(row, nodeSize, 2 * nodeSize)).isEmpty();
-		final var hasProps = 1 == (row.length & 1);
-		final var arcElements = hasProps ? Arrays.copyOf(row, row.length - 1) : row;
-		
-		if (isArc) {
-			gvp.processArc(arcElements);
-		} else if (!hasProps) {
-			gvp.processNodeProp(Helpers.concat(Arrays.copyOf(row, nodeSize), "label", row[0]));
-		}
-		
-		if (hasProps) {
-			Arrays.stream(row[row.length - 1].split(propDelimiter))
-			.filter(prop -> !prop.isEmpty())
-			.map(prop -> prop.split("=", 2))
-			.filter(propEntry -> {
-				if (2 == propEntry.length) {
-					return true;
-				}
-				
-				System.err.println(String.format("Error parsing row: %s", Arrays.toString(row)));
-				System.err.println(String.format(" Error parsing propEntry: %s", Arrays.toString(propEntry)));
-				
-				return false;
-			})
-			.forEach(propEntry -> {
-				if (isArc) {
-					gvp.processArcProp(Helpers.concat(arcElements, propEntry));
-				} else {
-					gvp.processNodeProp(Helpers.concat(Arrays.copyOf(row, nodeSize), propEntry));
-				}
-			});
-		}
 	}
 	
 	public static final PrintStream getPrintStream(final ArgsParser ap, final String outKey) throws FileNotFoundException {

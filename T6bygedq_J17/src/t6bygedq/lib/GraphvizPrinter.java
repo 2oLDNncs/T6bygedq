@@ -322,13 +322,13 @@ public final class GraphvizPrinter {
 		props.computeIfAbsent(obj, __ -> new LinkedHashMap<>()).put(propKey, propVal);
 	}
 	
-	private static final String formatProps(final Map<String, String> props) {
+	public static final String formatProps(final Map<String, String> props) {
 		return String.join(",", props.entrySet().stream()
 				.map(e -> String.format("%s=%s", e.getKey(), formatPropValue(e.getValue())))
 				.toArray(String[]::new));
 	}
 	
-	private static final String formatPropValue(final String value) {
+	public static final String formatPropValue(final String value) {
 		if (value.startsWith("<") && value.endsWith(">")) {
 			return value;
 		}
