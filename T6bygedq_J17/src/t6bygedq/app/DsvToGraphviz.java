@@ -12,6 +12,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.stream.IntStream;
@@ -124,7 +125,7 @@ public class DsvToGraphviz {
 		public GvPath(final List<GvCluster> nest, final int id) {
 			this.nest = nest;
 			this.id = id;
-			this.lastName = Helpers.last(nest).getKeyName();
+			this.lastName = Helpers.last(nest).getKey().getName();
 		}
 		
 		public final List<GvCluster> getNest() {
@@ -172,7 +173,7 @@ public class DsvToGraphviz {
 	public static final class GvGraph {
 		
 		private final List<GvLink> links = new ArrayList<>();
-		private final Map<Object, GvCluster> clusters = new LinkedHashMap<>();
+		private final Map<GvClusterKey, GvCluster> clusters = new LinkedHashMap<>();
 		private final Map<List<GvCluster>, GvPath> paths = new LinkedHashMap<>();
 		
 		private final Map<GvPath, Object> gvTrees = new LinkedHashMap<>();
@@ -183,7 +184,7 @@ public class DsvToGraphviz {
 		}
 		
 		public final GvCluster getCluster(final int level, final CharSequence name) {
-			return this.clusters.computeIfAbsent(Arrays.asList(level, name), GvCluster::new);
+			return this.clusters.computeIfAbsent(new GvClusterKey(level, name), GvCluster::new);
 		}
 		
 		public final GvPath findPath(final List<GvCluster> clusters) {
@@ -408,23 +409,17 @@ public class DsvToGraphviz {
 	 */
 	private static final class GvCluster {
 		
-		private final List<Object> key;
-		private final int hashCode;
+		private final GvClusterKey key;
 		private final Collection<GvCluster> parents = new LinkedHashSet<>();
 		private final Collection<GvCluster> children = new LinkedHashSet<>();
 		private final Collection<GvLink> links = new LinkedHashSet<>();
 		
-		public GvCluster(final Object key) {
-			this.key = Helpers.cast(key);
-			this.hashCode = key.hashCode();
+		public GvCluster(final GvClusterKey key) {
+			this.key = key;
 		}
 		
-		public final Object getKey() {
+		public final GvClusterKey getKey() {
 			return this.key;
-		}
-		
-		public final CharSequence getKeyName() {
-			return Helpers.cast(this.key.get(1));
 		}
 		
 		public final void addChild(final GvCluster child) {
@@ -438,7 +433,7 @@ public class DsvToGraphviz {
 		
 		@Override
 		public final int hashCode() {
-			return this.hashCode;
+			return this.getKey().hashCode();
 		}
 		
 		@Override
@@ -455,6 +450,56 @@ public class DsvToGraphviz {
 		@Override
 		public final String toString() {
 			return this.getKey().toString();
+		}
+		
+	}
+	
+	/**
+	 * @author 2oLDNncs 20251022
+	 */
+	public static final class GvClusterKey {
+		
+		private final int level;
+		
+		private final CharSequence name;
+		
+		private final int hashCode;
+		
+		public GvClusterKey(final int level, final CharSequence name) {
+			this.level = level;
+			this.name = Objects.requireNonNull(name);
+			this.hashCode = Objects.hash(level, name);
+		}
+		
+		public final int getLevel() {
+			return this.level;
+		}
+		
+		public final CharSequence getName() {
+			return this.name;
+		}
+		
+		@Override
+		public final int hashCode() {
+			return this.hashCode;
+		}
+		
+		@Override
+		public final boolean equals(Object obj) {
+			if (this == obj) {
+				return true;
+			}
+			
+			final var that = GvClusterKey.class.cast(obj);
+			
+			return null != that
+					&& this.level == that.level
+					&& this.getName().equals(that.getName());
+		}
+		
+		@Override
+		public final String toString() {
+			return String.format("[%s %s]", this.getLevel(), this.getName());
 		}
 		
 	}
