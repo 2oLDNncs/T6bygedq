@@ -8,6 +8,8 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -15,9 +17,9 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.function.Consumer;
 import java.util.function.Function;
-import java.util.stream.IntStream;
 
 import t6bygedq.lib.ArgsParser;
+import t6bygedq.lib.CaseInsensitiveCharSequence;
 import t6bygedq.lib.GraphvizPrinter;
 import t6bygedq.lib.Helpers;
 import t6bygedq.lib.Log;
@@ -179,6 +181,45 @@ public class DsvToGraphviz {
 		private final Map<GvPath, Object> gvTrees = new LinkedHashMap<>();
 		private final Map<GvPath, Map<GvPath, Map<String, String>>> gvLinks = new LinkedHashMap<>();
 		
+		private final Map<String, Map<String, String>> propClasses = new HashMap<>();
+		
+		public final void parseProps(final Map<String, String> props) {
+			final var propClassName = props.get(PROP_KEY_DEFCLASS);
+			
+			if (null != propClassName) {
+				final var classProps = new LinkedHashMap<>(props);
+				
+				classProps.remove(PROP_KEY_DEFCLASS);
+				
+				this.propClasses.put(propClassName, classProps);
+			}
+		}
+		
+		public final void evalProps(final Map<String, String> props) {
+			if (!props.containsKey(PROP_KEY_CLASS)) {
+				return;
+			}
+			
+			final var done = new HashSet<>();
+			final var todo = new ArrayList<>(props.entrySet());
+			
+			props.clear();
+			
+			while (!todo.isEmpty()) {
+				final var prop = todo.remove(0);
+				
+				if (PROP_KEY_CLASS.equals(prop.getKey())) {
+					for (final var propClassName : prop.getValue().split(" +")) {
+						if (done.add(propClassName)) {
+							todo.addAll(this.propClasses.getOrDefault(propClassName, Collections.emptyMap()).entrySet());
+						}
+					}
+				} else {
+					props.computeIfAbsent(prop.getKey(), __ -> prop.getValue());
+				}
+			}
+		}
+		
 		public final void addLink(final GvLink link) {
 			this.links.add(link);
 		}
@@ -292,6 +333,9 @@ public class DsvToGraphviz {
 			}
 		}
 		
+		public static final String PROP_KEY_DEFCLASS = "$defclass";
+		public static final String PROP_KEY_CLASS = "$class";
+		
 	}
 	
 	/**
@@ -366,6 +410,9 @@ public class DsvToGraphviz {
 				final var srcId = src.getId();
 				dsts.forEach((dst, props) -> {
 					final var dstId = dst.getId();
+					
+					graph.evalProps(props);
+					
 					this.out.println(String.format("\t%s -> %s [ltail=cluster_%s,lhead=cluster_%s,%s]",
 							srcId, dstId, srcId, dstId,
 							GraphvizPrinter.formatProps(props)));
@@ -384,6 +431,7 @@ public class DsvToGraphviz {
 				final var pathProps = graph.findPathProps(path);
 				final var indent = String.join("", Collections.nCopies(path.getNest().size(), "\t"));
 				
+				graph.evalProps(pathProps);
 				pathProps.computeIfAbsent("label", __ -> path.getLastName().toString());
 				
 				if (!subtrees.isEmpty()) {
@@ -577,7 +625,7 @@ public class DsvToGraphviz {
 			public LinkParser(final GvGraph graph, final String propDelimiter, final boolean caseSensitive) {
 				this.graph = graph;
 				this.propDelimiter = propDelimiter;
-				this.makeName = caseSensitive ? String.class::cast : CaseInsensitiveName::new;
+				this.makeName = caseSensitive ? String.class::cast : CaseInsensitiveCharSequence::new;
 			}
 			
 			public final GvLink parse(final String[] row) {
@@ -604,6 +652,8 @@ public class DsvToGraphviz {
 						
 						result.props.put(kv[0], kv[1]);
 					}
+					
+					this.graph.parseProps(result.props);
 				}
 				
 				if (result.hasSrc()) {
@@ -625,69 +675,6 @@ public class DsvToGraphviz {
 				if (!name.isEmpty()) {
 					path.add(this.graph.getCluster(i, this.makeName.apply(name)));
 				}
-			}
-			
-			/**
-			 * @author 2oLDNncs 20251022
-			 */
-			public static final class CaseInsensitiveName implements CharSequence {
-				
-				private final String string;
-				private final String lowerCase;
-				private final int hashCode;
-				
-				public CaseInsensitiveName(final String string) {
-					this.string = string;
-					this.lowerCase = this.string.toLowerCase();
-					this.hashCode = this.lowerCase.hashCode();
-				}
-				
-				@Override
-				public final IntStream chars() {
-					return this.string.chars();
-				}
-				
-				@Override
-				public final IntStream codePoints() {
-					return this.string.codePoints();
-				}
-				
-				@Override
-				public final int hashCode() {
-					return this.hashCode;
-				}
-				
-				@Override
-				public final boolean equals(final Object obj) {
-					if (this == obj) {
-						return true;
-					}
-					
-					final var that = CaseInsensitiveName.class.cast(obj);
-					
-					return null != that && this.lowerCase.equals(that.lowerCase);
-				}
-				
-				@Override
-				public final String toString() {
-					return this.string;
-				}
-				
-				@Override
-				public final CharSequence subSequence(final int start, final int end) {
-					return this.string.subSequence(start, end);
-				}
-				
-				@Override
-				public final int length() {
-					return this.string.length();
-				}
-				
-				@Override
-				public final char charAt(final int index) {
-					return this.string.charAt(index);
-				}
-				
 			}
 						
 		}
