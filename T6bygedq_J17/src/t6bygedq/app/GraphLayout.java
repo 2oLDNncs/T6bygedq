@@ -34,6 +34,7 @@ import javax.xml.stream.FactoryConfigurationError;
 import javax.xml.stream.XMLStreamException;
 import javax.xml.stream.XMLStreamWriter;
 
+import t6bygedq.app.GraphLayout.Graph.Node;
 import t6bygedq.lib.ArgsParser;
 import t6bygedq.lib.Chrono;
 import t6bygedq.lib.Helpers;
@@ -968,118 +969,120 @@ public final class GraphLayout {
 			
 			Log.out(6, "CompRoots:", compRoots);
 			
-			// Init node rects
-			{
-				final var todo = new ArrayList<Graph.Node>();
-				final var done = new HashSet<Graph.Node>();
-				
-				compRoots.values().forEach(todo::addAll);
-				
-				final BiConsumer<Graph.Node, Point>[] translateRect = cast(new BiConsumer[1]);
-				translateRect[0] = (node, delta) -> {
-					getRect(node).translate(delta.x, delta.y);
-					node.children.forEach(child -> translateRect[0].accept(child, delta));
-				};
-				
-				while (!todo.isEmpty()) {
-					final var node = todo.get(0);
-					
-					if (done.contains(node)) {
-						todo.remove(0);
-						
-						final var rect = getRect(node);
-						final var minChildTop = new int[] { Integer.MAX_VALUE };
-						final var maxChildBottom = new int[] { Integer.MIN_VALUE };
-						
-						node.forEachChild(child -> {
-							final var childRect = getRect(child);
-							
-							if (childRect.y <= rect.y) {
-								translateRect[0].accept(child, new Point(0, +1));
-							}
-							
-							minChildTop[0] = Math.min(minChildTop[0], childRect.y);
-							maxChildBottom[0] = Math.max(maxChildBottom[0], childRect.y + childRect.width);
-						});
-						
-						if (minChildTop[0] < maxChildBottom[0]) {
-							rect.y = minChildTop[0] - 1;
-							rect.height = maxChildBottom[0] - rect.y;
-						}
-						
-						Log.out(4, node, rect);
-					} else {
-						final var rect = getRect(node);
-						final var row = (Integer) node.getProps().get(K_DEPTH);
-						
-						rect.setBounds(0, row, 1, 1);
-						
-						todo.addAll(0, node.children);
-						done.add(node);
-					}
-				}
-			}
+			this.initNodeRects(compRoots);
 			
-			// Init node locations
-			{
-				final var rowSize = new HashMap<Integer, Integer>();
-				final var todo = new ArrayList<Graph.Node>();
-				final var done = new HashSet<Graph.Node>();
-				
-				compRoots.values().forEach(todo::addAll);
-				
-				while (!todo.isEmpty()) {
-					final var node = todo.get(0);
-					
-					if (done.contains(node)) {
-						todo.remove(0);
-						
-						final var rect = getRect(node);
-						final Consumer<Graph.Node>[] updateRect = cast(new Consumer[1]);
-						updateRect[0] = child -> {
-							final var childRect = getRect(child);
-							rect.add(childRect);
-							child.forEachChild(updateRect[0]);
-						};
-						
-						node.forEachChild(updateRect[0]);
-						
-						{
-							final var right = rect.x + rect.width - 1;
-							
-							for (var y = rect.y; y < rect.y + rect.height; y += 1) {
-								rowSize.compute(y, (__, v) -> Math.max(null == v ? 0 : v, right));
-							}
-						}
-						
-						Log.out(4, node, rect, rowSize);
-					} else {
-						final var rect = getRect(node);
-						var minX = 0;
-						
-						for (var y = rect.y; y < rect.y + rect.height; y += 1) {
-							minX = Math.max(minX, rowSize.getOrDefault(y, 0));
-						}
-						
-						for (var y = rect.y; y < rect.y + rect.height; y += 1) {
-							rowSize.put(y, minX);
-						}
-						
-						rect.x = rowSize.compute(rect.y, (__, v) -> null == v ? 0 : 1 + v);
-						
-						Log.out(4, node, rect);
-						
-						todo.addAll(0, node.children);
-						done.add(node);
-					}
-				}
-			}
+			this.initNodeLocations(compRoots);
 			
 			this.initCells();
 			
 			this.buildPaths();
 			
 			Log.done();
+		}
+		
+		private final void initNodeLocations(final Map<Integer, Collection<Graph.Node>> compRoots) {
+			final var rowSize = new HashMap<Integer, Integer>();
+			final var todo = new ArrayList<Graph.Node>();
+			final var done = new HashSet<Graph.Node>();
+			
+			compRoots.values().forEach(todo::addAll);
+			
+			while (!todo.isEmpty()) {
+				final var node = todo.get(0);
+				
+				if (done.contains(node)) {
+					todo.remove(0);
+					
+					final var rect = getRect(node);
+					final Consumer<Graph.Node>[] updateRect = cast(new Consumer[1]);
+					updateRect[0] = child -> {
+						final var childRect = getRect(child);
+						rect.add(childRect);
+						child.forEachChild(updateRect[0]);
+					};
+					
+					node.forEachChild(updateRect[0]);
+					
+					{
+						final var right = rect.x + rect.width - 1;
+						
+						for (var y = rect.y; y < rect.y + rect.height; y += 1) {
+							rowSize.compute(y, (__, v) -> Math.max(null == v ? 0 : v, right));
+						}
+					}
+					
+					Log.out(4, node, rect, rowSize);
+				} else {
+					final var rect = getRect(node);
+					var minX = 0;
+					
+					for (var y = rect.y; y < rect.y + rect.height; y += 1) {
+						minX = Math.max(minX, rowSize.getOrDefault(y, 0));
+					}
+					
+					for (var y = rect.y; y < rect.y + rect.height; y += 1) {
+						rowSize.put(y, minX);
+					}
+					
+					rect.x = rowSize.compute(rect.y, (__, v) -> null == v ? 0 : 1 + v);
+					
+					Log.out(4, node, rect);
+					
+					todo.addAll(0, node.children);
+					done.add(node);
+				}
+			}
+		}
+		
+		private final void initNodeRects(final Map<Integer, Collection<Graph.Node>> compRoots) {
+			final var todo = new ArrayList<Graph.Node>();
+			final var done = new HashSet<Graph.Node>();
+			
+			compRoots.values().forEach(todo::addAll);
+			
+			final BiConsumer<Graph.Node, Point>[] translateRect = cast(new BiConsumer[1]);
+			translateRect[0] = (node, delta) -> {
+				getRect(node).translate(delta.x, delta.y);
+				node.children.forEach(child -> translateRect[0].accept(child, delta));
+			};
+			
+			while (!todo.isEmpty()) {
+				final var node = todo.get(0);
+				
+				if (done.contains(node)) {
+					todo.remove(0);
+					
+					final var rect = getRect(node);
+					final var minChildTop = new int[] { Integer.MAX_VALUE };
+					final var maxChildBottom = new int[] { Integer.MIN_VALUE };
+					
+					node.forEachChild(child -> {
+						final var childRect = getRect(child);
+						
+						if (childRect.y <= rect.y) {
+							translateRect[0].accept(child, new Point(0, +1));
+						}
+						
+						minChildTop[0] = Math.min(minChildTop[0], childRect.y);
+						maxChildBottom[0] = Math.max(maxChildBottom[0], childRect.y + childRect.width);
+					});
+					
+					if (minChildTop[0] < maxChildBottom[0]) {
+						rect.y = minChildTop[0] - 1;
+						rect.height = maxChildBottom[0] - rect.y;
+					}
+					
+					Log.out(4, node, rect);
+				} else {
+					final var rect = getRect(node);
+					final var row = (Integer) node.getProps().get(K_DEPTH);
+					
+					rect.setBounds(0, row, 1, 1);
+					
+					todo.addAll(0, node.children);
+					done.add(node);
+				}
+			}
 		}
 		
 		private final void computeNodeDepth() {
@@ -1237,7 +1240,7 @@ public final class GraphLayout {
 			
 			private final int colIdx;
 			
-			private final Map<Side, List<Waypoint>> walls = new EnumMap<>(Side.class);
+			private final Map<Side, Wall> walls = new EnumMap<>(Side.class);
 			
 			private Graph.Node node;
 			
@@ -1257,17 +1260,17 @@ public final class GraphLayout {
 				return this.colIdx;
 			}
 			
-			public final List<Waypoint> getWall(final Side side) {
+			public final Wall getWall(final Side side) {
 				return this.walls.get(side);
 			}
 			
 			public final void setWall(final Side side, final Cell neighbor) {
-				final List<Waypoint> wall;
+				final Wall wall;
 				
 				if (null != neighbor) {
 					wall = neighbor.getWall(side.flip());
 				} else {
-					wall = new ArrayList<>();
+					wall = new Wall();
 				}
 				
 				this.walls.put(side, Objects.requireNonNull(wall));
@@ -1275,7 +1278,7 @@ public final class GraphLayout {
 			
 			public final Stream<Path> streamOutgoingPaths() {
 				return this.walls.values().stream()
-						.flatMap(Collection::stream)
+						.flatMap(Wall::stream)
 						.map(Waypoint::getPaths)
 						.flatMap(Collection::stream)
 						.filter(path -> this == path.getOri());
@@ -1292,7 +1295,7 @@ public final class GraphLayout {
 						.collect(Collectors.toSet());
 			}
 			
-			public final Waypoint waypoint(final Side side, final Path path) {
+			public final Waypoint waypoint(final Side prevSide, final Side side, final Path path) {
 				final var sameOri = this.groupByOri;
 				final var sameDst = this.groupByDst.computeIfAbsent(side, __ -> new HashMap<>());
 				var result = sameDst.get(path.getDst());
@@ -1313,7 +1316,7 @@ public final class GraphLayout {
 				
 				result = new Waypoint(this, side);
 				
-				this.getWall(side).add(result);
+				this.getWall(side).add(prevSide, side, result);
 				
 				sameDst.put(path.getDst(), result);
 				sameOri.put(path.getOri(), result);
@@ -1476,7 +1479,45 @@ public final class GraphLayout {
 				}
 				
 			}
-			
+
+			/**
+			 * @author 2oLDNncs 20250621
+			 */
+			private static final class Wall {
+				
+				private final List<Waypoint> waypoints = new ArrayList<>();
+				
+				private int corner1 = 0;
+				private int corner2 = 0;
+				
+				public final int size() {
+					return this.waypoints.size();
+				}
+				
+				public final void add(final Side prevSide, final Side side, final Waypoint waypoint) {
+//					if (Side.EAST == prevSide) {
+//						if (Side.NORTH == side) {
+//							this.waypoints.add(0, waypoint);
+//							this.corner1 += 1;
+//						} else if (Side.WEST == side) {
+//							this.waypoints.add(this.waypoints.size() - this.corner2 - 1, waypoint);
+//						} else if (Side.SOUTH == side) {
+//							
+//						}
+//					}
+					this.waypoints.add(waypoint);
+				}
+				
+				public final int indexOf(final Waypoint waypoint) {
+					return this.waypoints.indexOf(waypoint);
+				}
+				
+				public final Stream<Waypoint> stream() {
+					return this.waypoints.stream();
+				}
+				
+			}
+						
 		}
 		
 		/**
@@ -1551,6 +1592,8 @@ public final class GraphLayout {
 			
 			private final List<Waypoint> waypoints = new ArrayList<>();
 			
+			private Cell.Side prevSide = null;
+			
 			public Path(final Cell ori, final Cell dst) {
 				this.ori = ori;
 				this.dst = dst;
@@ -1569,11 +1612,13 @@ public final class GraphLayout {
 			}
 			
 			public final void prependWaypoint(final Cell cell, final Cell.Side side) {
-				final var wp = cell.waypoint(side, this);
+				final var wp = cell.waypoint(this.prevSide, side, this);
 				
 				wp.getPaths().add(this);
 				
 				this.getWaypoints().add(0, wp);
+				
+				this.prevSide = side;
 			}
 			
 			@Override

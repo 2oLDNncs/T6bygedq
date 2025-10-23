@@ -51,8 +51,13 @@ public class XSSFWorkbookToGraphviz {
 	
 	public static final void forEachRowInWorkbookSheet(final ArgsParser ap, final String workbookFileKey, final String sheetKey,
 			final Consumer<String[]> action) throws IOException {
-		try (final var workbook = tryOpenWorkbook(ap.getFile(workbookFileKey), PackageAccess.READ)) {
-			processSheet(workbook, ap, sheetKey, action);
+		forEachRowInWorkbookSheet(ap.getFile(workbookFileKey), ap.getString(sheetKey), action);
+	}
+	
+	public static final void forEachRowInWorkbookSheet(final File workbookFile, final String sheetName,
+			final Consumer<String[]> action) throws IOException {
+		try (final var workbook = tryOpenWorkbook(workbookFile, PackageAccess.READ)) {
+			processSheet(workbook, sheetName, action);
 		}
 	}
 	
@@ -83,10 +88,10 @@ public class XSSFWorkbookToGraphviz {
 			
 			gvp.begin(true, "dot", true, ap.getString(ARG_RANKDIR));
 			
-			processSheet(workbook, ap, ARG_ARCS, gvp::processArc);
-			processSheet(workbook, ap, ARG_NODE_PROPS, gvp::processNodeProp);
-			processSheet(workbook, ap, ARG_ARC_PROPS, gvp::processArcProp);
-			processSheet(workbook, ap, ARG_CLASS_PROPS, gvp::processClassProp);
+			processSheet(workbook, ap.getString(ARG_ARCS), gvp::processArc);
+			processSheet(workbook, ap.getString(ARG_NODE_PROPS), gvp::processNodeProp);
+			processSheet(workbook, ap.getString(ARG_ARC_PROPS), gvp::processArcProp);
+			processSheet(workbook, ap.getString(ARG_CLASS_PROPS), gvp::processClassProp);
 			
 			gvp.end();
 		} finally {
@@ -96,10 +101,8 @@ public class XSSFWorkbookToGraphviz {
 		}
 	}
 	
-	public static final void processSheet(final XSSFWorkbook workbook, final ArgsParser ap, final String apKey,
+	public static final void processSheet(final XSSFWorkbook workbook, final String sheetName,
 			final Consumer<String[]> action) {
-		final var sheetName = ap.getString(apKey);
-		
 		if (!sheetName.isEmpty()) {
 			final var sheet = workbook.getSheet(sheetName);
 			

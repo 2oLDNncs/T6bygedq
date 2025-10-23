@@ -1,5 +1,6 @@
 package t6bygedq.app;
 
+import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.PrintStream;
@@ -86,7 +87,9 @@ public class DsvToGraphviz {
 			
 			try {
 				final var graph = new GvGraph();
-				final var linkParser = new GvLink.LinkParser(graph, propDelimiter, caseSensitive);
+				final var linkParser = new GvLink.GvLinkParser(graph,
+						new GvLink.GvLinkParser.GvSource(ap.getFile(ARG_IN), ap.getString(ARG_SHEET)),
+						propDelimiter, caseSensitive);
 				
 				processRows(ap, row -> {
 					graph.addLink(linkParser.parse(row));
@@ -614,18 +617,25 @@ public class DsvToGraphviz {
 		/**
 		 * @author 2oLDNncs 20251022
 		 */
-		public static final class LinkParser {
+		public static final class GvLinkParser {
 			
 			private final GvGraph graph;
+			
+			private final GvSource currentSource;
 			
 			private final String propDelimiter;
 			
 			private final Function<String, CharSequence> makeName;
 			
-			public LinkParser(final GvGraph graph, final String propDelimiter, final boolean caseSensitive) {
+			private final Collection<Object> usedSources = new HashSet<>();
+			
+			public GvLinkParser(final GvGraph graph, final GvSource currentSource, final String propDelimiter, final boolean caseSensitive) {
 				this.graph = graph;
+				this.currentSource = currentSource;
 				this.propDelimiter = propDelimiter;
 				this.makeName = caseSensitive ? String.class::cast : CaseInsensitiveCharSequence::new;
+				
+				this.usedSources.add(currentSource);
 			}
 			
 			public final GvLink parse(final String[] row) {
@@ -643,17 +653,7 @@ public class DsvToGraphviz {
 				final var hasProps = ((row.length & 1) != 0) && !Helpers.last(row).isEmpty();
 				
 				if (hasProps) {
-					for (final var prop : Helpers.last(row).split(this.propDelimiter)) {
-						final var kv = prop.split("=", 2);
-						
-						if (2 != kv.length) {
-							throw new IllegalArgumentException(String.format("Invalid prop: %s", prop));
-						}
-						
-						result.props.put(kv[0], kv[1]);
-					}
-					
-					this.graph.parseProps(result.props);
+					this.parseProps(row, result);
 				}
 				
 				if (result.hasSrc()) {
@@ -669,6 +669,65 @@ public class DsvToGraphviz {
 				return result;
 			}
 			
+			private final void parseProps(final String[] row, final GvLink result) {
+				for (final var prop : Helpers.last(row).split(this.propDelimiter)) {
+					final var kv = prop.split("=", 2);
+					
+					if (2 != kv.length) {
+						throw new IllegalArgumentException(String.format("Invalid prop: %s", prop));
+					}
+					
+					result.props.put(kv[0], kv[1]);
+				}
+				
+				this.graph.parseProps(result.props);
+				
+				this.evalIncludes(result);
+			}
+			
+			private final void evalIncludes(final GvLink result) {
+				final var includeFile = result.props.getOrDefault(PROP_KEY_INCLUDE_FILE, "");
+				final var includeSheet = result.props.getOrDefault(PROP_KEY_INCLUDE_SHEET, "");
+				
+				if (includeFile.isBlank() && includeSheet.isBlank()) {
+					return;
+				}
+				
+				final var source = this.currentSource.newSource(includeFile, includeSheet);
+				
+				if (!source.isValid()) {
+					Log.errf(0, "%s.evalIncludes", this.getClass().getSimpleName());
+					Log.errf(0, " %s<%s>", PROP_KEY_INCLUDE_FILE, includeFile);
+					Log.errf(0, " %s<%s>", PROP_KEY_INCLUDE_SHEET, includeSheet);
+					Log.errf(0, " -> Invalid %s", source);
+					
+					return;
+				}
+				
+				if (this.usedSources.add(source)) {
+					Log.outf(0, "%s.evalIncludes", this.getClass().getSimpleName());
+					Log.outf(0, " %s<%s>", PROP_KEY_INCLUDE_FILE, includeFile);
+					Log.outf(0, " %s<%s>", PROP_KEY_INCLUDE_SHEET, includeSheet);
+					Log.outf(0, " -> %s", source);
+					
+					final var includeAll = parseBoolean(result.props.getOrDefault(PROP_KEY_INCLUDE_ALL, Boolean.FALSE.toString()));
+					
+					Log.outf(0, " %s<%s>", PROP_KEY_INCLUDE_ALL, includeAll);
+					
+					if (!includeAll) {
+						Log.errf(0, "  TODO includeAll<%s> not implemented yet", includeAll);
+					}
+					
+					try {
+						processRows(source.getFile(), source.getSheetName(), "\t", incRow -> {
+							this.graph.addLink(this.parse(incRow));
+						});
+					} catch (final IOException e) {
+						e.printStackTrace();
+					}
+				}
+			}
+			
 			private final void updatePath(final List<GvCluster> path, final List<String> node, final int i) {
 				final var name = node.get(i);
 				
@@ -676,24 +735,104 @@ public class DsvToGraphviz {
 					path.add(this.graph.getCluster(i, this.makeName.apply(name)));
 				}
 			}
-						
+			
+			public static final String PROP_KEY_INCLUDE_FILE = "$include-file";
+			public static final String PROP_KEY_INCLUDE_SHEET = "$include-sheet";
+			public static final String PROP_KEY_INCLUDE_ALL = "$include-all";
+			
+			public static final boolean parseBoolean(final String string) {
+				return Objects.requireNonNull(Boolean.parseBoolean(string),
+						() -> String.format("Invalid value: %s", string));
+			}
+			
+			/**
+			 * @author 2oLDNncs 20251023
+			 */
+			public static final class GvSource {
+				
+				private final File file;
+				
+				private final String sheetName;
+				
+				private final int hashCode;
+				
+				public GvSource(final File file, final String sheetName) {
+					this.file = file;
+					this.sheetName = Objects.requireNonNull(sheetName);
+					this.hashCode = Objects.hash(
+							null == file ? 0 : this.getFile().getAbsolutePath(),
+							this.getSheetName());
+				}
+				
+				public final File getFile() {
+					return this.file;
+				}
+				
+				public final String getSheetName() {
+					return this.sheetName;
+				}
+				
+				public final boolean isValid() {
+					return null != this.getFile();
+				}
+				
+				public final GvSource newSource(final String fileName, final String sheetName) {
+					File file = null;
+					
+					if (!fileName.isBlank()) {
+						file = new File(this.getFile().getParent(), fileName);
+					} else if (!sheetName.isBlank() && !this.getSheetName().isBlank()) {
+						file = this.getFile();
+					}
+					
+					return new GvSource(file, sheetName);
+				}
+				
+				@Override
+				public final int hashCode() {
+					return this.hashCode;
+				}
+				
+				@Override
+				public final boolean equals(final Object obj) {
+					if (this == obj) {
+						return true;
+					}
+					
+					final var that = GvSource.class.cast(obj);
+					
+					return null != that
+							&& this.getFile().equals(that.getFile())
+							&& this.getSheetName().equals(that.getSheetName());
+				}
+				
+				@Override
+				public String toString() {
+					return "GvSource [file=" + this.getFile() + ", sheetName=" + this.getSheetName() + "]";
+				}
+				
+			}
+			
 		}
 				
 	}
 	
 	private static final void processRows(final ArgsParser ap, final Consumer<String[]> action) throws IOException {
-		if (!ap.getString(ARG_SHEET).isBlank()) {
-			XSSFWorkbookToGraphviz.forEachRowInWorkbookSheet(ap, ARG_IN, ARG_SHEET, action);
+		processRows(ap.getFile(ARG_IN), ap.getString(ARG_SHEET), ap.getString(ARG_DELIMITER1), action);
+	}
+	
+	private static final void processRows(final File file, final String sheetName, final String delimiter,
+			final Consumer<String[]> action) throws IOException {
+		if (!sheetName.isBlank()) {
+			XSSFWorkbookToGraphviz.forEachRowInWorkbookSheet(file, sheetName, action);
 		} else {
-			forEachRowInDsv(ap, ARG_IN, ARG_DELIMITER1, action);
+			forEachRowInDsv(file, delimiter, action);
 		}
 	}
 	
-	public static final void forEachRowInDsv(final ArgsParser ap, final String dsvFileKey, final String delimiterKey,
+	public static final void forEachRowInDsv(final File file, final String delimiter,
 			final Consumer<String[]> action) throws IOException {
-		final var delimiter = ap.getString(delimiterKey);
-		
-		Files.lines(ap.getPath(dsvFileKey)).forEach(line -> {
+		Files.lines(file.toPath()).forEach(line -> {
 			action.accept(line.split(delimiter, -1));
 		});
 	}
