@@ -9,9 +9,9 @@ public final class Stats {
 	
 	private double sum;
 	
-	private double min;
+	private double min = Double.POSITIVE_INFINITY;
 	
-	private double max;
+	private double max = Double.NEGATIVE_INFINITY;
 	
 	public final long getCount() {
 		return this.count;

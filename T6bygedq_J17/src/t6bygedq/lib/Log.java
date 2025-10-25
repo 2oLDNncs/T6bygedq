@@ -42,13 +42,15 @@ public final class Log {
 		tic(logLevel, Helpers.join(" ", args) + "...");
 	}
 	
-	public static final void done() {
+	public static final long done() {
 		final var info = toc();
 		final var logLevel = info.logLevel();
 		
 		if (logLevel <= 0 || isEnabled(logLevel)) {
 			out.println(format(info));
 		}
+		
+		return info.millis();
 	}
 	
 	public static final void outf(final int logLevel, final String format, final Object... args) {

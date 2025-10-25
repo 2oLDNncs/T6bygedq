@@ -13,6 +13,7 @@ import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Objects;
+import java.util.Random;
 import java.util.stream.Collector;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -62,6 +63,15 @@ public final class Helpers {
 		System.arraycopy(elements, 0, result, array.length, elements.length);
 		
 		return result;
+	}
+	
+	public static final void shuffle(final int[] values, final Random random) {
+		for (var i = 0; i < values.length; i += 1) {
+			final var k = random.nextInt(values.length);
+			final var tmp = values[i];
+			values[i] = values[k];
+			values[k] = tmp;
+		}
 	}
 	
 	public static String join(final String delimiter, final Object... args) {

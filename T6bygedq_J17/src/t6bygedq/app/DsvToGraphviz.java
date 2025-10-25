@@ -21,6 +21,7 @@ import java.util.function.Function;
 
 import t6bygedq.lib.ArgsParser;
 import t6bygedq.lib.CaseInsensitiveCharSequence;
+import t6bygedq.lib.CompNode;
 import t6bygedq.lib.GraphvizPrinter;
 import t6bygedq.lib.Helpers;
 import t6bygedq.lib.Log;
@@ -55,7 +56,7 @@ public class DsvToGraphviz {
 		ap.setDefault(ARG_COMPOUND, true);
 		ap.setDefault(ARG_RANKDIR, "TB");
 		ap.setDefault(ARG_RANKSEP, 0.75);
-		ap.setDefault(ARG_REORG, Reorg.OFF);
+		ap.setDefault(ARG_REORG, GvReorg.OFF);
 		ap.setDefault(ARG_CASE_SENSITIVE, true);
 		ap.setDefault(ARG_OUT, "data/test_gv_dsv.gv");
 		
@@ -76,7 +77,7 @@ public class DsvToGraphviz {
 		try (final var out = getPrintStream(ap, ARG_OUT)) {
 			final var gvp = new GvPrinter(out);
 			final var propDelimiter = ap.getString(ARG_DELIMITER2);
-			final var reorg = ap.<Reorg>getEnum(ARG_REORG);
+			final var reorg = ap.<GvReorg>getEnum(ARG_REORG);
 			final var caseSensitive = ap.getBoolean(ARG_CASE_SENSITIVE);
 			
 			gvp.begin(ap.getBoolean(ARG_STRICT));
@@ -87,13 +88,11 @@ public class DsvToGraphviz {
 			
 			try {
 				final var graph = new GvGraph();
-				final var linkParser = new GvLink.GvLinkParser(graph,
-						new GvLink.GvLinkParser.GvSource(ap.getFile(ARG_IN), ap.getString(ARG_SHEET)),
-						propDelimiter, caseSensitive);
+				final var linkParser = new GvLink.GvLinkParser(graph, propDelimiter, caseSensitive);
 				
-				processRows(ap, row -> {
-					graph.addLink(linkParser.parse(row));
-				});
+				linkParser.addSource(ap.getString(ARG_IN), ap.getString(ARG_SHEET), true);
+				
+				linkParser.processSources();
 				
 				graph.prepare(reorg);
 				
@@ -108,7 +107,7 @@ public class DsvToGraphviz {
 	/**
 	 * @author 2oLDNncs 20251010
 	 */
-	public static enum Reorg {
+	public static enum GvReorg {
 		
 		OFF, FOLD;
 		
@@ -127,10 +126,16 @@ public class DsvToGraphviz {
 		
 		private final CharSequence lastName;
 		
+		private final CompNode compNode;
+		
 		public GvPath(final List<GvCluster> nest, final int id) {
 			this.nest = nest;
 			this.id = id;
-			this.lastName = Helpers.last(nest).getKey().getName();
+			final var lastCluster = Helpers.last(nest);
+			this.lastName = lastCluster.getKey().getName();
+			this.compNode = lastCluster.getComponent();
+			
+//			Log.outf(0, "%s %s", this, nest.stream().map(GvCluster::getComponent).collect(Collectors.toSet()));
 		}
 		
 		public final List<GvCluster> getNest() {
@@ -147,6 +152,10 @@ public class DsvToGraphviz {
 		
 		public final CharSequence getLastName() {
 			return this.lastName;
+		}
+		
+		public final CompNode getCompNode() {
+			return this.compNode;
 		}
 		
 		@Override
@@ -185,6 +194,12 @@ public class DsvToGraphviz {
 		private final Map<GvPath, Map<GvPath, Map<String, String>>> gvLinks = new LinkedHashMap<>();
 		
 		private final Map<String, Map<String, String>> propClasses = new HashMap<>();
+		
+		private final CompNode mainCompNode = new CompNode() {};
+		
+		public final CompNode getMainCompNode() {
+			return this.mainCompNode;
+		}
 		
 		public final void parseProps(final Map<String, String> props) {
 			final var propClassName = props.get(PROP_KEY_DEFCLASS);
@@ -239,8 +254,8 @@ public class DsvToGraphviz {
 			return this.paths.computeIfAbsent(nest, k -> new GvPath(k, this.paths.size() + 1));
 		}
 		
-		public final void prepare(final Reorg reorg) {
-			if (Reorg.FOLD == reorg) {
+		public final void prepare(final GvReorg reorg) {
+			if (GvReorg.FOLD == reorg) {
 				this.fold();
 				this.reorgDirBack();
 				this.preparePaths();
@@ -312,6 +327,10 @@ public class DsvToGraphviz {
 		}
 		
 		public final void prepareLink(final GvLink link) {
+			if (link.included) {
+				link.connectTo(this.getMainCompNode());
+			}
+			
 			if (link.hasDst()) {
 				this.addPath(link.dstNest);
 				
@@ -414,11 +433,14 @@ public class DsvToGraphviz {
 				dsts.forEach((dst, props) -> {
 					final var dstId = dst.getId();
 					
-					graph.evalProps(props);
-					
-					this.out.println(String.format("\t%s -> %s [ltail=cluster_%s,lhead=cluster_%s,%s]",
-							srcId, dstId, srcId, dstId,
-							GraphvizPrinter.formatProps(props)));
+					if (src.getCompNode().isConnectedTo(graph.getMainCompNode())
+							|| dst.getCompNode().isConnectedTo(graph.getMainCompNode())) {
+						graph.evalProps(props);
+						
+						this.out.println(String.format("\t%s -> %s [ltail=cluster_%s,lhead=cluster_%s,%s]",
+								srcId, dstId, srcId, dstId,
+								GraphvizPrinter.formatProps(props)));
+					}
 				});
 			});
 		}
@@ -429,6 +451,10 @@ public class DsvToGraphviz {
 		
 		private final void printTrees(final GvGraph graph, final Map<GvPath, Object> trees) {
 			trees.forEach((path, content) -> {
+				if (!path.getCompNode().isConnectedTo(graph.getMainCompNode())) {
+					return;
+				}
+				
 				final var subtrees = Helpers.<Map<GvPath, Object>>cast(content);
 				final var pathId = path.getId();
 				final var pathProps = graph.findPathProps(path);
@@ -451,7 +477,6 @@ public class DsvToGraphviz {
 				}
 			});
 		}
-			
 		
 	}
 	
@@ -464,6 +489,7 @@ public class DsvToGraphviz {
 		private final Collection<GvCluster> parents = new LinkedHashSet<>();
 		private final Collection<GvCluster> children = new LinkedHashSet<>();
 		private final Collection<GvLink> links = new LinkedHashSet<>();
+		private final CompNode component = new CompNode() {};
 		
 		public GvCluster(final GvClusterKey key) {
 			this.key = key;
@@ -480,6 +506,14 @@ public class DsvToGraphviz {
 		
 		public final boolean isRoot() {
 			return this.parents.isEmpty();
+		}
+		
+		public final void connectTo(final CompNode component) {
+			component.connectTo(this.component);
+		}
+		
+		public final CompNode getComponent() {
+			return this.component.findRoot();
 		}
 		
 		@Override
@@ -563,16 +597,17 @@ public class DsvToGraphviz {
 		private List<GvCluster> srcNest = new ArrayList<>();
 		private List<GvCluster> dstNest = new ArrayList<>();
 		private final Map<String, String> props = new LinkedHashMap<>();
+		private final boolean included;
 		
-		private GvLink() {
-			//pass
+		private GvLink(final boolean included) {
+			this.included = included;
 		}
 		
-		private GvLink(final List<GvCluster> srcNest, final List<GvCluster> dstNest,
-				final Map<String, String> props) {
-			this.srcNest.addAll(srcNest);
-			this.dstNest.addAll(dstNest);
-			this.props.putAll(props);
+		private GvLink(final GvLink that) {
+			this.srcNest.addAll(that.srcNest);
+			this.dstNest.addAll(that.dstNest);
+			this.props.putAll(that.props);
+			this.included = that.included;
 		}
 		
 		public final void tryParentSrcToDst() {
@@ -592,7 +627,7 @@ public class DsvToGraphviz {
 		}
 		
 		public final GvLink dup() {
-			return new GvLink(this.srcNest, this.dstNest, this.props);
+			return new GvLink(this);
 		}
 		
 		public final void reorgDirBack() {
@@ -609,9 +644,20 @@ public class DsvToGraphviz {
 			}
 		}
 		
+		public final void connectTo(final CompNode compNode) {
+			connectTo(compNode, this.srcNest);
+			connectTo(compNode, this.dstNest);
+		}
+		
 		@Override
 		public final String toString() {
 			return String.format("%s -> %s %s", this.srcNest, this.dstNest, this.props);
+		}
+		
+		private static final void connectTo(final CompNode compNode, final Iterable<GvCluster> nest) {
+			for (final var cluster : nest) {
+				cluster.connectTo(compNode);
+			}
 		}
 		
 		/**
@@ -621,25 +667,20 @@ public class DsvToGraphviz {
 			
 			private final GvGraph graph;
 			
-			private final GvSource currentSource;
-			
 			private final String propDelimiter;
 			
 			private final Function<String, CharSequence> makeName;
 			
-			private final Collection<Object> usedSources = new HashSet<>();
+			private final List<GvSource> sources = new ArrayList<>();
 			
-			public GvLinkParser(final GvGraph graph, final GvSource currentSource, final String propDelimiter, final boolean caseSensitive) {
+			public GvLinkParser(final GvGraph graph, final String propDelimiter, final boolean caseSensitive) {
 				this.graph = graph;
-				this.currentSource = currentSource;
 				this.propDelimiter = propDelimiter;
 				this.makeName = caseSensitive ? String.class::cast : CaseInsensitiveCharSequence::new;
-				
-				this.usedSources.add(currentSource);
 			}
 			
-			public final GvLink parse(final String[] row) {
-				final var result = new GvLink();
+			public final GvLink parse(final String[] row, final boolean included) {
+				final var result = new GvLink(included);
 				final var n = row.length / 2;
 				
 				final var srcNode = Arrays.asList(Arrays.copyOfRange(row, 0, n));
@@ -648,6 +689,24 @@ public class DsvToGraphviz {
 				for (var i = 0; i < n; i += 1) {
 					this.updatePath(result.srcNest, srcNode, i);
 					this.updatePath(result.dstNest, dstNode, i);
+					
+					CompNode component = null;
+					
+					for (final var cluster : result.srcNest) {
+						if (null == component) {
+							component = cluster.getComponent();
+						} else {
+							cluster.connectTo(component);
+						}
+					}
+					
+					for (final var cluster : result.dstNest) {
+						if (null == component) {
+							component = cluster.getComponent();
+						} else {
+							cluster.connectTo(component);
+						}
+					}
 				}
 				
 				final var hasProps = ((row.length & 1) != 0) && !Helpers.last(row).isEmpty();
@@ -693,34 +752,50 @@ public class DsvToGraphviz {
 					return;
 				}
 				
-				final var source = this.currentSource.newSource(includeFile, includeSheet);
+				final var includeAll = parseBoolean(result.props.getOrDefault(PROP_KEY_INCLUDE_ALL, Boolean.FALSE.toString()));
+				
+				this.addSource(includeFile, includeSheet, includeAll);
+			}
+			
+			public final void addSource(final String fileName, final String sheetName, final boolean includeAll) {
+				final GvSource source;
+				
+				if (this.sources.isEmpty()) {
+					source = new GvSource(new File(fileName), sheetName, includeAll);
+				} else {
+					source = this.sources.get(0).newSource(fileName, sheetName, includeAll);
+				}
 				
 				if (!source.isValid()) {
-					Log.errf(0, "%s.evalIncludes", this.getClass().getSimpleName());
-					Log.errf(0, " %s<%s>", PROP_KEY_INCLUDE_FILE, includeFile);
-					Log.errf(0, " %s<%s>", PROP_KEY_INCLUDE_SHEET, includeSheet);
+					Log.errf(0, "%s.addSource", this.getClass().getSimpleName());
+					Log.errf(0, " %s<%s>", PROP_KEY_INCLUDE_FILE, fileName);
+					Log.errf(0, " %s<%s>", PROP_KEY_INCLUDE_SHEET, sheetName);
+					Log.errf(0, " %s<%s>", PROP_KEY_INCLUDE_ALL, includeAll);
 					Log.errf(0, " -> Invalid %s", source);
 					
 					return;
 				}
 				
-				if (this.usedSources.add(source)) {
-					Log.outf(0, "%s.evalIncludes", this.getClass().getSimpleName());
-					Log.outf(0, " %s<%s>", PROP_KEY_INCLUDE_FILE, includeFile);
-					Log.outf(0, " %s<%s>", PROP_KEY_INCLUDE_SHEET, includeSheet);
-					Log.outf(0, " -> %s", source);
+				if (!this.sources.contains(source)) {
+					this.sources.add(source);
 					
-					final var includeAll = parseBoolean(result.props.getOrDefault(PROP_KEY_INCLUDE_ALL, Boolean.FALSE.toString()));
-					
-					Log.outf(0, " %s<%s>", PROP_KEY_INCLUDE_ALL, includeAll);
-					
-					if (!includeAll) {
-						Log.errf(0, "  TODO includeAll<%s> not implemented yet", includeAll);
+					if (1 < this.sources.size()) {
+						Log.outf(0, "%s.evalIncludes", this.getClass().getSimpleName());
+						Log.outf(0, " %s<%s>", PROP_KEY_INCLUDE_FILE, fileName);
+						Log.outf(0, " %s<%s>", PROP_KEY_INCLUDE_SHEET, sheetName);
+						Log.outf(0, " %s<%s>", PROP_KEY_INCLUDE_ALL, includeAll);
+						Log.outf(0, " -> %s", source);
 					}
+				}
+			}
+			
+			public final void processSources() {
+				for (var i = 0; i < this.sources.size(); i += 1) {
+					final var source = this.sources.get(i);
 					
 					try {
 						processRows(source.getFile(), source.getSheetName(), "\t", incRow -> {
-							this.graph.addLink(this.parse(incRow));
+							this.graph.addLink(this.parse(incRow, source.isIncludingAll()));
 						});
 					} catch (final IOException e) {
 						e.printStackTrace();
@@ -732,7 +807,7 @@ public class DsvToGraphviz {
 				final var name = node.get(i);
 				
 				if (!name.isEmpty()) {
-					path.add(this.graph.getCluster(i, this.makeName.apply(name)));
+					path.add(this.graph.getCluster(node.size() - 1 - i, this.makeName.apply(name)));
 				}
 			}
 			
@@ -756,12 +831,15 @@ public class DsvToGraphviz {
 				
 				private final int hashCode;
 				
-				public GvSource(final File file, final String sheetName) {
+				private final boolean includingAll;
+				
+				public GvSource(final File file, final String sheetName, final boolean includingAll) {
 					this.file = file;
 					this.sheetName = Objects.requireNonNull(sheetName);
 					this.hashCode = Objects.hash(
 							null == file ? 0 : this.getFile().getAbsolutePath(),
 							this.getSheetName());
+					this.includingAll = includingAll;
 				}
 				
 				public final File getFile() {
@@ -776,7 +854,11 @@ public class DsvToGraphviz {
 					return null != this.getFile();
 				}
 				
-				public final GvSource newSource(final String fileName, final String sheetName) {
+				public final boolean isIncludingAll() {
+					return this.includingAll;
+				}
+				
+				public final GvSource newSource(final String fileName, final String sheetName, final boolean includeAll) {
 					File file = null;
 					
 					if (!fileName.isBlank()) {
@@ -785,7 +867,7 @@ public class DsvToGraphviz {
 						file = this.getFile();
 					}
 					
-					return new GvSource(file, sheetName);
+					return new GvSource(file, sheetName, includeAll);
 				}
 				
 				@Override
@@ -815,10 +897,6 @@ public class DsvToGraphviz {
 			
 		}
 				
-	}
-	
-	private static final void processRows(final ArgsParser ap, final Consumer<String[]> action) throws IOException {
-		processRows(ap.getFile(ARG_IN), ap.getString(ARG_SHEET), ap.getString(ARG_DELIMITER1), action);
 	}
 	
 	private static final void processRows(final File file, final String sheetName, final String delimiter,
