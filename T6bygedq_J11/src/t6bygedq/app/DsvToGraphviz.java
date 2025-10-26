@@ -104,6 +104,12 @@ public class DsvToGraphviz {
 		Log.done();
 	}
 	
+	private static final CompNode newCompNode() {
+		return new CompNode() {
+			//pass
+		};
+	}
+	
 	/**
 	 * @author 2oLDNncs 20251010
 	 */
@@ -133,7 +139,7 @@ public class DsvToGraphviz {
 			this.id = id;
 			final var lastCluster = Helpers.last(nest);
 			this.lastName = lastCluster.getKey().getName();
-			this.compNode = lastCluster.getComponent();
+			this.compNode = lastCluster.getCompNode();
 			
 //			Log.outf(0, "%s %s", this, nest.stream().map(GvCluster::getComponent).collect(Collectors.toSet()));
 		}
@@ -195,7 +201,7 @@ public class DsvToGraphviz {
 		
 		private final Map<String, Map<String, String>> propClasses = new HashMap<>();
 		
-		private final CompNode mainCompNode = new CompNode() {};
+		private final CompNode mainCompNode = newCompNode();
 		
 		public final CompNode getMainCompNode() {
 			return this.mainCompNode;
@@ -304,22 +310,25 @@ public class DsvToGraphviz {
 			final var top = clusterStack.get(0);
 			
 			for (final var link : top.links) {
-				if (!link.dstNest.isEmpty() && !top.equals(link.dstNest.get(0))) {
-					clusterStack.add(0, link.dstNest.get(0));
-					this.prepareClusterStack(clusterStack);
-					clusterStack.remove(0);
+				if (link.hasDst()) {
+					final var dst0 = link.getDstNest().get(0);
+					
+					if (!top.equals(dst0)) {
+						if (clusterStack.contains(dst0)) {
+							Log.errf(0, "Cycle detected: %s -> %s", dst0, clusterStack);
+						} else {
+							clusterStack.add(0, dst0);
+							this.prepareClusterStack(clusterStack);
+							clusterStack.remove(0);
+						}
+					}
 				}
 				
 				final var implicitLink = link.dup();
 				
 				for (final var c : clusterStack) {
-					if (!implicitLink.srcNest.contains(c)) {
-						implicitLink.srcNest.add(0, c);
-					}
-					
-					if (!implicitLink.dstNest.contains(c)) {
-						implicitLink.dstNest.add(0, c);
-					}
+					pushFrontIfAbsent(implicitLink.getSrcNest(), c);
+					pushFrontIfAbsent(implicitLink.getDstNest(), c);
 				}
 				
 				this.prepareLink(implicitLink);
@@ -327,20 +336,20 @@ public class DsvToGraphviz {
 		}
 		
 		public final void prepareLink(final GvLink link) {
-			if (link.included) {
-				link.connectTo(this.getMainCompNode());
+			if (link.isIncluded()) {
+				link.connectCompNode(this.getMainCompNode());
 			}
 			
 			if (link.hasDst()) {
-				this.addPath(link.dstNest);
+				this.addPath(link.getDstNest());
 				
 				if (link.hasSrc()) {
-					this.addPath(link.srcNest);
+					this.addPath(link.getSrcNest());
 					
 					this.gvLinks
-					.computeIfAbsent(this.getPath(link.srcNest), __ -> new LinkedHashMap<>())
-					.computeIfAbsent(this.getPath(link.dstNest), __ -> new LinkedHashMap<>())
-					.putAll(link.props);
+					.computeIfAbsent(this.getPath(link.getSrcNest()), GvGraph::newLinkedHashMap)
+					.computeIfAbsent(this.getPath(link.getDstNest()), GvGraph::newLinkedHashMap)
+					.putAll(link.getProps());
 				}
 			}
 		}
@@ -351,12 +360,22 @@ public class DsvToGraphviz {
 			
 			for (final var current : path) {
 				p.add(current);
-				t = Helpers.cast(t.computeIfAbsent(this.getPath(new ArrayList<>(p)), __ -> new LinkedHashMap<>()));
+				t = Helpers.cast(t.computeIfAbsent(this.getPath(new ArrayList<>(p)), GvGraph::newLinkedHashMap));
 			}
 		}
 		
 		public static final String PROP_KEY_DEFCLASS = "$defclass";
 		public static final String PROP_KEY_CLASS = "$class";
+		
+		private static final <E> void pushFrontIfAbsent(final List<E> list, final E element) {
+			if (!list.contains(element)) {
+				list.add(0, element);
+			}
+		}
+		
+		private static final <K1, K2, V2> Map<K2, V2> newLinkedHashMap(final K1 __) {
+			return new LinkedHashMap<>();
+		}
 		
 	}
 	
@@ -489,7 +508,7 @@ public class DsvToGraphviz {
 		private final Collection<GvCluster> parents = new LinkedHashSet<>();
 		private final Collection<GvCluster> children = new LinkedHashSet<>();
 		private final Collection<GvLink> links = new LinkedHashSet<>();
-		private final CompNode component = new CompNode() {};
+		private final CompNode compNode = newCompNode();
 		
 		public GvCluster(final GvClusterKey key) {
 			this.key = key;
@@ -508,12 +527,16 @@ public class DsvToGraphviz {
 			return this.parents.isEmpty();
 		}
 		
-		public final void connectTo(final CompNode component) {
-			component.connectTo(this.component);
+		public final void connectCompNode(final GvCluster that) {
+			this.getCompNode().connectTo(that.getCompNode());
 		}
 		
-		public final CompNode getComponent() {
-			return this.component.findRoot();
+		public final void connectCompNode(final CompNode compNode) {
+			compNode.connectTo(this.compNode);
+		}
+		
+		public final CompNode getCompNode() {
+			return this.compNode;
 		}
 		
 		@Override
@@ -604,26 +627,45 @@ public class DsvToGraphviz {
 		}
 		
 		private GvLink(final GvLink that) {
-			this.srcNest.addAll(that.srcNest);
-			this.dstNest.addAll(that.dstNest);
-			this.props.putAll(that.props);
+			this.getSrcNest().addAll(that.getSrcNest());
+			this.getDstNest().addAll(that.getDstNest());
+			this.getProps().putAll(that.getProps());
 			this.included = that.included;
+		}
+		
+		public final List<GvCluster> getSrcNest() {
+			return this.srcNest;
+		}
+		
+		public final List<GvCluster> getDstNest() {
+			return this.dstNest;
+		}
+		
+		public final Map<String, String> getProps() {
+			return this.props;
+		}
+		
+		public final boolean isIncluded() {
+			return this.included;
 		}
 		
 		public final void tryParentSrcToDst() {
 			if (this.hasSrc() && this.hasDst()) {
-				if (!this.srcNest.get(0).equals(this.dstNest.get(0))) {
-					this.srcNest.get(0).addChild(this.dstNest.get(0));
+				final var src0 = this.getSrcNest().get(0);
+				final var dst0 = this.getDstNest().get(0);
+				
+				if (!src0.equals(dst0)) {
+					src0.addChild(dst0);
 				}
 			}
 		}
 		
 		public final boolean hasSrc() {
-			return !this.srcNest.isEmpty();
+			return !this.getSrcNest().isEmpty();
 		}
 		
 		public final boolean hasDst() {
-			return !this.dstNest.isEmpty();
+			return !this.getDstNest().isEmpty();
 		}
 		
 		public final GvLink dup() {
@@ -631,12 +673,12 @@ public class DsvToGraphviz {
 		}
 		
 		public final void reorgDirBack() {
-			for (final var propIt = this.props.entrySet().iterator(); propIt.hasNext();) {
+			for (final var propIt = this.getProps().entrySet().iterator(); propIt.hasNext();) {
 				final var prop = propIt.next();
 				
 				if ("dir".equals(prop.getKey()) && "back".equals(prop.getValue())) {
-					var tmp = this.srcNest;
-					this.srcNest = this.dstNest;
+					var tmp = this.getSrcNest();
+					this.srcNest = this.getDstNest();
 					this.dstNest = tmp;
 					propIt.remove();
 					break;
@@ -644,19 +686,19 @@ public class DsvToGraphviz {
 			}
 		}
 		
-		public final void connectTo(final CompNode compNode) {
-			connectTo(compNode, this.srcNest);
-			connectTo(compNode, this.dstNest);
+		public final void connectCompNode(final CompNode compNode) {
+			connectCompNode(compNode, this.getSrcNest());
+			connectCompNode(compNode, this.getDstNest());
 		}
 		
 		@Override
 		public final String toString() {
-			return String.format("%s -> %s %s", this.srcNest, this.dstNest, this.props);
+			return String.format("%s -> %s %s", this.getSrcNest(), this.getDstNest(), this.getProps());
 		}
 		
-		private static final void connectTo(final CompNode compNode, final Iterable<GvCluster> nest) {
-			for (final var cluster : nest) {
-				cluster.connectTo(compNode);
+		private static final void connectCompNode(final CompNode compNode, final List<GvCluster> nest) {
+			if (!nest.isEmpty()) {
+				nest.get(0).connectCompNode(compNode);
 			}
 		}
 		
@@ -687,26 +729,12 @@ public class DsvToGraphviz {
 				final var dstNode = Arrays.asList(Arrays.copyOfRange(row, n, 2 * n));
 				
 				for (var i = 0; i < n; i += 1) {
-					this.updatePath(result.srcNest, srcNode, i);
-					this.updatePath(result.dstNest, dstNode, i);
-					
-					CompNode component = null;
-					
-					for (final var cluster : result.srcNest) {
-						if (null == component) {
-							component = cluster.getComponent();
-						} else {
-							cluster.connectTo(component);
-						}
-					}
-					
-					for (final var cluster : result.dstNest) {
-						if (null == component) {
-							component = cluster.getComponent();
-						} else {
-							cluster.connectTo(component);
-						}
-					}
+					this.updatePath(result.getSrcNest(), srcNode, i);
+					this.updatePath(result.getDstNest(), dstNode, i);
+				}
+				
+				if (result.hasSrc() && result.hasDst()) {
+					result.getSrcNest().get(0).connectCompNode(result.getDstNest().get(0));
 				}
 				
 				final var hasProps = ((row.length & 1) != 0) && !Helpers.last(row).isEmpty();
@@ -717,12 +745,12 @@ public class DsvToGraphviz {
 				
 				if (result.hasSrc()) {
 					if (result.hasDst()) {
-						result.srcNest.get(0).links.add(result);
+						result.getSrcNest().get(0).links.add(result);
 					} else {
-						this.graph.getPath(result.srcNest).getProps().putAll(result.props);
+						this.graph.getPath(result.getSrcNest()).getProps().putAll(result.getProps());
 					}
 				} else if (result.hasDst()) {
-					this.graph.getPath(result.dstNest).getProps().putAll(result.props);
+					this.graph.getPath(result.getDstNest()).getProps().putAll(result.getProps());
 				}
 				
 				return result;
@@ -736,23 +764,24 @@ public class DsvToGraphviz {
 						throw new IllegalArgumentException(String.format("Invalid prop: %s", prop));
 					}
 					
-					result.props.put(kv[0], kv[1]);
+					result.getProps().put(kv[0], kv[1]);
 				}
 				
-				this.graph.parseProps(result.props);
+				this.graph.parseProps(result.getProps());
 				
 				this.evalIncludes(result);
 			}
 			
 			private final void evalIncludes(final GvLink result) {
-				final var includeFile = result.props.getOrDefault(PROP_KEY_INCLUDE_FILE, "");
-				final var includeSheet = result.props.getOrDefault(PROP_KEY_INCLUDE_SHEET, "");
+				final var props = result.getProps();
+				final var includeFile = props.getOrDefault(PROP_KEY_INCLUDE_FILE, "");
+				final var includeSheet = props.getOrDefault(PROP_KEY_INCLUDE_SHEET, "");
 				
 				if (includeFile.isBlank() && includeSheet.isBlank()) {
 					return;
 				}
 				
-				final var includeAll = parseBoolean(result.props.getOrDefault(PROP_KEY_INCLUDE_ALL, Boolean.FALSE.toString()));
+				final var includeAll = parseBoolean(props.getOrDefault(PROP_KEY_INCLUDE_ALL, Boolean.FALSE.toString()));
 				
 				this.addSource(includeFile, includeSheet, includeAll);
 			}
@@ -807,7 +836,13 @@ public class DsvToGraphviz {
 				final var name = node.get(i);
 				
 				if (!name.isEmpty()) {
-					path.add(this.graph.getCluster(node.size() - 1 - i, this.makeName.apply(name)));
+					final var cluster = this.graph.getCluster(node.size() - 1 - i, this.makeName.apply(name));
+					
+					if (!path.isEmpty()) {
+						path.get(0).connectCompNode(cluster);
+					}
+					
+					path.add(cluster);
 				}
 			}
 			
