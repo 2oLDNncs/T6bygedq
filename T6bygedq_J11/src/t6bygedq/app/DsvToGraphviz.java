@@ -71,6 +71,7 @@ public class DsvToGraphviz {
 		Log.outf(0, " %s<%s>", ARG_RANKDIR, ap.getString(ARG_RANKDIR));
 		Log.outf(0, " %s<%s>", ARG_RANKSEP, ap.getDouble(ARG_RANKSEP));
 		Log.outf(0, " %s<%s>", ARG_REORG, ap.getEnum(ARG_REORG));
+		Log.outf(0, " %s<%s>", ARG_CASE_SENSITIVE, ap.getBoolean(ARG_CASE_SENSITIVE));
 		Log.outf(0, " %s<%s>", ARG_OUT, ap.getString(ARG_OUT));
 		
 		Log.beginf(0, "Processing");
@@ -298,7 +299,11 @@ public class DsvToGraphviz {
 					final var p = this.findPath(nest.subList(i, j));
 					
 					if (null != p) {
-						p.getProps().forEach((k, v) -> result.computeIfAbsent(k, __ -> v));
+						p.getProps().forEach((k, v) -> {
+							if (p.equals(path) || !"label".equals(k)) {
+								result.computeIfAbsent(k, __ -> v);
+							}
+						});
 					}
 				}
 			}
