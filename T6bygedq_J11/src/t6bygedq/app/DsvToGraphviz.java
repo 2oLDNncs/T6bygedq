@@ -141,8 +141,6 @@ public class DsvToGraphviz {
 			final var lastCluster = Helpers.last(nest);
 			this.lastName = lastCluster.getKey().getName();
 			this.compNode = lastCluster.getCompNode();
-			
-//			Log.outf(0, "%s %s", this, nest.stream().map(GvCluster::getComponent).collect(Collectors.toSet()));
 		}
 		
 		public final List<GvCluster> getNest() {

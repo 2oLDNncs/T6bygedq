@@ -144,13 +144,15 @@ public class XSSFWorkbookToGraphviz {
 		for (var i = rowRange.getMin(); i <= rowRange.getMax(); i += 1) {
 			final var row = sheet.getRow(i);
 			
-			Arrays.fill(lineElements, "");
-			
-			for (var j = colRange.getMin(); j <= colRange.getMax(); j += 1) {
-				lineElements[j - colRange.getMin()] = toString(row.getCell(j));
+			if (null != row) {
+				Arrays.fill(lineElements, "");
+				
+				for (var j = colRange.getMin(); j <= colRange.getMax(); j += 1) {
+					lineElements[j - colRange.getMin()] = toString(row.getCell(j));
+				}
+				
+				action.accept(lineElements);
 			}
-			
-			action.accept(lineElements);
 		}
 	}
 	
