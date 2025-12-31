@@ -18,6 +18,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.regex.Pattern;
 
 import t6bygedq.lib.ArgsParser;
 import t6bygedq.lib.CaseInsensitiveCharSequence;
@@ -135,6 +136,10 @@ public class DsvToGraphviz {
 		
 		private final CompNode compNode;
 		
+		private boolean src;
+		
+		private boolean dst;
+		
 		public GvPath(final List<GvCluster> nest, final int id) {
 			this.nest = nest;
 			this.id = id;
@@ -161,6 +166,22 @@ public class DsvToGraphviz {
 		
 		public final CompNode getCompNode() {
 			return this.compNode;
+		}
+		
+		public final boolean isSrc() {
+			return this.src;
+		}
+		
+		public final void setSrc(final boolean src) {
+			this.src = src;
+		}
+		
+		public final boolean isDst() {
+			return this.dst;
+		}
+		
+		public final void setDst(final boolean dst) {
+			this.dst = dst;
 		}
 		
 		@Override
@@ -267,6 +288,8 @@ public class DsvToGraphviz {
 			} else {
 				this.prepapreLinks();
 			}
+			
+			this.identifyNodeTopology();
 		}
 		
 		private final void fold() {
@@ -286,6 +309,27 @@ public class DsvToGraphviz {
 		
 		private final void prepapreLinks() {
 			this.links.forEach(this::prepareLink);
+		}
+		
+		private final void identifyNodeTopology() {
+			this.gvLinks.forEach((src, dsts) -> {
+				dsts.forEach((dst, props) -> {
+					if ("back".equals(props.get("dir"))) {
+						src.setDst(true);
+						dst.setSrc(true);
+					} else {
+						src.setSrc(true);
+						dst.setDst(true);
+					}
+				});
+			});
+			
+			this.gvLinks.forEach((src, dsts) -> {
+				dsts.forEach((dst, __) -> {
+					updatePropClassTopo(src);
+					updatePropClassTopo(dst);
+				});
+			});
 		}
 		
 		public final Map<String, String> findPathProps(final GvPath path) {
@@ -369,6 +413,40 @@ public class DsvToGraphviz {
 		
 		public static final String PROP_KEY_DEFCLASS = "$defclass";
 		public static final String PROP_KEY_CLASS = "$class";
+		public static final String PROP_VAL_SOURCE = "$source";
+		public static final String PROP_VAL_SINK = "$sink";
+		public static final String PROP_VAL_ISOLATED = "$isolated";
+		public static final String PROP_VAL_BETWEEN = "$between";
+		
+		private static final Pattern P_PROP_CLASS_TOPO = Pattern.compile(
+				"(^| )(" + String.join("|", patternQuote(PROP_VAL_SOURCE, PROP_VAL_SINK, PROP_VAL_ISOLATED, PROP_VAL_BETWEEN)) + ")( |$)");
+		
+		private static final String[] patternQuote(final String... strings) {
+			return Arrays.stream(strings)
+					.map(Pattern::quote)
+					.toArray(String[]::new);
+		}
+		
+		private static final void updatePropClassTopo(final GvPath path) {
+			if (path.isSrc()) {
+				if (path.isDst()) {
+					addPropClassTopo(path, PROP_VAL_BETWEEN);
+				} else {
+					addPropClassTopo(path, PROP_VAL_SOURCE);
+				}
+			} else {
+				if (path.isDst()) {
+					addPropClassTopo(path, PROP_VAL_SINK);
+				} else {
+					addPropClassTopo(path, PROP_VAL_ISOLATED);
+				}
+			}
+		}
+		
+		private static final void addPropClassTopo(final GvPath path, final String propVal) {
+			path.getProps().compute(PROP_KEY_CLASS, (__, v) -> null == v ? propVal :
+				(P_PROP_CLASS_TOPO.matcher(v).find() ? v : v + " " + PROP_VAL_SINK));
+		}
 		
 		private static final <E> void pushFrontIfAbsent(final List<E> list, final E element) {
 			if (!list.contains(element)) {
