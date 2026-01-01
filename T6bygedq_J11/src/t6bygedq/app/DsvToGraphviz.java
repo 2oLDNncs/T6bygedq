@@ -16,6 +16,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.regex.Pattern;
@@ -289,7 +290,8 @@ public class DsvToGraphviz {
 				this.prepapreLinks();
 			}
 			
-			this.identifyNodeTopology();
+			this.classifyLinksEndpoints();
+			this.prepareTrees(this.gvTrees);
 		}
 		
 		private final void fold() {
@@ -311,7 +313,7 @@ public class DsvToGraphviz {
 			this.links.forEach(this::prepareLink);
 		}
 		
-		private final void identifyNodeTopology() {
+		private final void classifyLinksEndpoints() {
 			this.gvLinks.forEach((src, dsts) -> {
 				dsts.forEach((dst, props) -> {
 					if ("back".equals(props.get("dir"))) {
@@ -323,12 +325,20 @@ public class DsvToGraphviz {
 					}
 				});
 			});
-			
-			this.gvLinks.forEach((src, dsts) -> {
-				dsts.forEach((dst, __) -> {
-					updatePropClassTopo(src);
-					updatePropClassTopo(dst);
-				});
+		}
+		
+		private final void prepareTrees(final Map<GvPath, Object> trees) {
+			this.forEachConnectedPath(trees, (path, subtrees) -> {
+				GvGraph.updatePropClassTopo(path);
+				this.prepareTrees(subtrees);
+			});
+		}
+		
+		public final void forEachConnectedPath(final Map<GvPath, Object> trees, BiConsumer<GvPath, Map<GvPath, Object>> action) {
+			trees.forEach((path, content) -> {
+				if (path.getCompNode().isConnectedTo(this.getMainCompNode())) {
+					action.accept(path, Helpers.<Map<GvPath, Object>>cast(content));
+				}
 			});
 		}
 		
@@ -445,7 +455,7 @@ public class DsvToGraphviz {
 		
 		private static final void addPropClassTopo(final GvPath path, final String propVal) {
 			path.getProps().compute(PROP_KEY_CLASS, (__, v) -> null == v ? propVal :
-				(P_PROP_CLASS_TOPO.matcher(v).find() ? v : v + " " + PROP_VAL_SINK));
+				(P_PROP_CLASS_TOPO.matcher(v).find() ? v : v + " " + propVal));
 		}
 		
 		private static final <E> void pushFrontIfAbsent(final List<E> list, final E element) {
@@ -550,18 +560,14 @@ public class DsvToGraphviz {
 		}
 		
 		private final void printTrees(final GvGraph graph, final Map<GvPath, Object> trees) {
-			trees.forEach((path, content) -> {
-				if (!path.getCompNode().isConnectedTo(graph.getMainCompNode())) {
-					return;
-				}
-				
-				final var subtrees = Helpers.<Map<GvPath, Object>>cast(content);
-				final var pathId = path.getId();
+			graph.forEachConnectedPath(trees, (path, subtrees) -> {
 				final var pathProps = graph.findPathProps(path);
-				final var indent = String.join("", Collections.nCopies(path.getNest().size(), "\t"));
 				
 				graph.evalProps(pathProps);
 				pathProps.computeIfAbsent("label", __ -> path.getLastName().toString());
+				
+				final var pathId = path.getId();
+				final var indent = String.join("", Collections.nCopies(path.getNest().size(), "\t"));
 				
 				if (!subtrees.isEmpty()) {
 					this.out.println(String.format("%ssubgraph cluster_%s {", indent, pathId));
