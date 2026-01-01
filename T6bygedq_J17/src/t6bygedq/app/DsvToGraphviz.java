@@ -44,6 +44,7 @@ public class DsvToGraphviz {
 	public static final String ARG_RANKSEP = "-Ranksep";
 	public static final String ARG_REORG = "-Reorg";
 	public static final String ARG_CASE_SENSITIVE = "-CaseSensitive";
+	public static final String ARG_COLUMN_FILTER = "-ColumnFilter";
 	public static final String ARG_OUT = "-Out";
 	
 	public static final void main(final String... args) throws IOException {
@@ -60,6 +61,7 @@ public class DsvToGraphviz {
 		ap.setDefault(ARG_RANKSEP, 0.75);
 		ap.setDefault(ARG_REORG, GvReorg.OFF);
 		ap.setDefault(ARG_CASE_SENSITIVE, true);
+		ap.setDefault(ARG_COLUMN_FILTER, 0);
 		ap.setDefault(ARG_OUT, "data/test_gv_dsv.gv");
 		
 		Log.outf(0, "%s.main", DsvToGraphviz.class.getSimpleName());
@@ -74,6 +76,7 @@ public class DsvToGraphviz {
 		Log.outf(0, " %s<%s>", ARG_RANKSEP, ap.getDouble(ARG_RANKSEP));
 		Log.outf(0, " %s<%s>", ARG_REORG, ap.getEnum(ARG_REORG));
 		Log.outf(0, " %s<%s>", ARG_CASE_SENSITIVE, ap.getBoolean(ARG_CASE_SENSITIVE));
+		Log.outf(0, " %s<%s>", ARG_COLUMN_FILTER, ap.getInt(ARG_COLUMN_FILTER));
 		Log.outf(0, " %s<%s>", ARG_OUT, ap.getString(ARG_OUT));
 		
 		Log.beginf(0, "Processing");
@@ -82,6 +85,7 @@ public class DsvToGraphviz {
 			final var propDelimiter = ap.getString(ARG_DELIMITER2);
 			final var reorg = ap.<GvReorg>getEnum(ARG_REORG);
 			final var caseSensitive = ap.getBoolean(ARG_CASE_SENSITIVE);
+			final var columnFilter = ap.getInt(ARG_COLUMN_FILTER);
 			
 			gvp.begin(ap.getBoolean(ARG_STRICT));
 			gvp.graphPropLayout(ap.getString(ARG_LAYOUT));
@@ -91,7 +95,7 @@ public class DsvToGraphviz {
 			
 			try {
 				final var graph = new GvGraph();
-				final var linkParser = new GvLink.GvLinkParser(graph, propDelimiter, caseSensitive);
+				final var linkParser = new GvLink.GvLinkParser(graph, propDelimiter, caseSensitive, columnFilter);
 				
 				linkParser.addSource(ap.getString(ARG_IN), ap.getString(ARG_SHEET), true);
 				
@@ -800,22 +804,27 @@ public class DsvToGraphviz {
 			
 			private final Function<String, CharSequence> makeName;
 			
+			private final int columnFilter;
+			
 			private final List<GvSource> sources = new ArrayList<>();
 			
-			public GvLinkParser(final GvGraph graph, final String propDelimiter, final boolean caseSensitive) {
+			public GvLinkParser(final GvGraph graph, final String propDelimiter, final boolean caseSensitive, final int columnFilter) {
 				this.graph = graph;
 				this.propDelimiter = propDelimiter;
 				this.makeName = caseSensitive ? String.class::cast : CaseInsensitiveCharSequence::new;
+				this.columnFilter = columnFilter;
 			}
 			
 			public final GvLink parse(final String[] row, final boolean included) {
 				final var result = new GvLink(included);
 				final var n = row.length / 2;
+				final var selectionStart = -n < this.columnFilter && this.columnFilter < 0 ? this.columnFilter + n : 0;
+				final var selectionEnd = 0 < this.columnFilter && this.columnFilter < n ? this.columnFilter : n;
+				final var selectionSize = selectionEnd - selectionStart;
+				final var srcNode = Arrays.asList(Arrays.copyOfRange(row, selectionStart, selectionEnd));
+				final var dstNode = Arrays.asList(Arrays.copyOfRange(row, n + selectionStart, n + selectionEnd));
 				
-				final var srcNode = Arrays.asList(Arrays.copyOfRange(row, 0, n));
-				final var dstNode = Arrays.asList(Arrays.copyOfRange(row, n, 2 * n));
-				
-				for (var i = 0; i < n; i += 1) {
+				for (var i = 0; i < selectionSize; i += 1) {
 					this.updatePath(result.getSrcNest(), srcNode, i);
 					this.updatePath(result.getDstNest(), dstNode, i);
 				}
@@ -827,7 +836,7 @@ public class DsvToGraphviz {
 				final var hasProps = ((row.length & 1) != 0) && !Helpers.last(row).isEmpty();
 				
 				if (hasProps) {
-					this.parseProps(row, result);
+					this.parseProps(Helpers.last(row), result);
 				}
 				
 				if (result.hasSrc()) {
@@ -843,8 +852,8 @@ public class DsvToGraphviz {
 				return result;
 			}
 			
-			private final void parseProps(final String[] row, final GvLink result) {
-				for (final var prop : Helpers.last(row).split(this.propDelimiter)) {
+			private final void parseProps(final String props, final GvLink result) {
+				for (final var prop : props.split(this.propDelimiter)) {
 					final var kv = prop.split("=", 2);
 					
 					if (2 != kv.length) {
