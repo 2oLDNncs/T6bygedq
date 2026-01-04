@@ -901,9 +901,6 @@ public class DsvToGraphviz {
 			
 			private final void initNests(final String[] row, final GvLink link) {
 				final var n = row.length / 2;
-//				final var selectionStart = -n < this.columnFilter && this.columnFilter < 0 ? this.columnFilter + n : 0;
-//				final var selectionEnd = 0 < this.columnFilter && this.columnFilter < n ? this.columnFilter : n;
-				
 				final List<String> srcNode;
 				final List<String> dstNode;
 				
@@ -928,20 +925,15 @@ public class DsvToGraphviz {
 						srcNode.add(row[i]);
 						dstNode.add(row[n + i]);
 					}
-					
-//					this.columnsGenerators.stream()
-//					.flatMapToInt(f -> f.apply(n))
-//					.filter(i -> 0 <= i && i < n)
-//					.forEach(i -> {
-//						srcNode.add(row[i]);
-//						dstNode.add(row[n + i]);
-//					});
 				}
 				
 				final var nodeSize = srcNode.size();
+				final var invertSrcDst = this.invert
+						&& IntStream.range(0, n).anyMatch(i -> !row[i].isEmpty())
+						&& IntStream.range(n, n + n).anyMatch(i -> !row[i].isEmpty());
 				
 				for (var i = 0; i < nodeSize; i += 1) {
-					if (this.invert) {
+					if (invertSrcDst) {
 						this.updateNest(link.getSrcNest(), dstNode, i);
 						this.updateNest(link.getDstNest(), srcNode, i);
 					} else {
