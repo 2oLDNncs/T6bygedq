@@ -46,6 +46,7 @@ public class DsvToGraphviz {
 	public static final String ARG_REORG = "-Reorg";
 	public static final String ARG_CASE_SENSITIVE = "-CaseSensitive";
 	public static final String ARG_COLUMNS = "-Columns";
+	public static final String ARG_INVERT = "-Invert";
 	public static final String ARG_OUT = "-Out";
 	
 	public static final void main(final String... args) throws IOException {
@@ -64,6 +65,7 @@ public class DsvToGraphviz {
 		ap.setDefault(ARG_CASE_SENSITIVE, true);
 		ap.setDefault(ARG_COLUMNS, "");
 //		ap.setDefault(ARG_COLUMNS, "10,-10,1,-1,2:,:2,-2:,:-2,1:2,2:1,-1:1,1:-1");
+		ap.setDefault(ARG_INVERT, false);
 		ap.setDefault(ARG_OUT, "data/test_gv_dsv.gv");
 		
 		Log.outf(0, "%s.main", DsvToGraphviz.class.getSimpleName());
@@ -79,6 +81,7 @@ public class DsvToGraphviz {
 		Log.outf(0, " %s<%s>", ARG_REORG, ap.getEnum(ARG_REORG));
 		Log.outf(0, " %s<%s>", ARG_CASE_SENSITIVE, ap.getBoolean(ARG_CASE_SENSITIVE));
 		Log.outf(0, " %s<%s>", ARG_COLUMNS, ap.getString(ARG_COLUMNS));
+		Log.outf(0, " %s<%s>", ARG_INVERT, ap.getBoolean(ARG_INVERT));
 		Log.outf(0, " %s<%s>", ARG_OUT, ap.getString(ARG_OUT));
 		
 		Log.beginf(0, "Processing");
@@ -88,6 +91,7 @@ public class DsvToGraphviz {
 			final var reorg = ap.<GvReorg>getEnum(ARG_REORG);
 			final var caseSensitive = ap.getBoolean(ARG_CASE_SENSITIVE);
 			final var columns = ap.getString(ARG_COLUMNS);
+			final var invert = ap.getBoolean(ARG_INVERT);
 			
 			gvp.begin(ap.getBoolean(ARG_STRICT));
 			gvp.graphPropLayout(ap.getString(ARG_LAYOUT));
@@ -97,7 +101,8 @@ public class DsvToGraphviz {
 			
 			try {
 				final var graph = new GvGraph();
-				final var linkParser = new GvLink.GvLinkParser(graph, propDelimiter, caseSensitive, columns);
+				final var linkParser = new GvLink.GvLinkParser(graph, propDelimiter,
+						caseSensitive, columns, invert);
 				
 				linkParser.addSource(ap.getString(ARG_IN), ap.getString(ARG_SHEET), true);
 				
@@ -812,12 +817,16 @@ public class DsvToGraphviz {
 			
 			private int[] columns;
 			
+			private final boolean invert;
+			
 			private final List<GvSource> sources = new ArrayList<>();
 			
-			public GvLinkParser(final GvGraph graph, final String propDelimiter, final boolean caseSensitive, final String columns) {
+			public GvLinkParser(final GvGraph graph, final String propDelimiter,
+					final boolean caseSensitive, final String columns, final boolean invert) {
 				this.graph = graph;
 				this.propDelimiter = propDelimiter;
 				this.makeName = caseSensitive ? String.class::cast : CaseInsensitiveCharSequence::new;
+				this.invert = invert;
 				
 				this.parseColumns(columns);
 			}
@@ -932,8 +941,13 @@ public class DsvToGraphviz {
 				final var nodeSize = srcNode.size();
 				
 				for (var i = 0; i < nodeSize; i += 1) {
-					this.updateNest(link.getSrcNest(), srcNode, i);
-					this.updateNest(link.getDstNest(), dstNode, i);
+					if (this.invert) {
+						this.updateNest(link.getSrcNest(), dstNode, i);
+						this.updateNest(link.getDstNest(), srcNode, i);
+					} else {
+						this.updateNest(link.getSrcNest(), srcNode, i);
+						this.updateNest(link.getDstNest(), dstNode, i);
+					}
 				}
 			}
 			
