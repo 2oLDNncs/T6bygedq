@@ -20,6 +20,7 @@ import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.regex.Pattern;
+import java.util.stream.IntStream;
 
 import t6bygedq.lib.ArgsParser;
 import t6bygedq.lib.CaseInsensitiveCharSequence;
@@ -44,7 +45,7 @@ public class DsvToGraphviz {
 	public static final String ARG_RANKSEP = "-Ranksep";
 	public static final String ARG_REORG = "-Reorg";
 	public static final String ARG_CASE_SENSITIVE = "-CaseSensitive";
-	public static final String ARG_COLUMN_FILTER = "-ColumnFilter";
+	public static final String ARG_COLUMNS = "-Columns";
 	public static final String ARG_OUT = "-Out";
 	
 	public static final void main(final String... args) throws IOException {
@@ -61,7 +62,8 @@ public class DsvToGraphviz {
 		ap.setDefault(ARG_RANKSEP, 0.75);
 		ap.setDefault(ARG_REORG, GvReorg.OFF);
 		ap.setDefault(ARG_CASE_SENSITIVE, true);
-		ap.setDefault(ARG_COLUMN_FILTER, 0);
+		ap.setDefault(ARG_COLUMNS, "");
+//		ap.setDefault(ARG_COLUMNS, "10,-10,1,-1,2:,:2,-2:,:-2,1:2,2:1,-1:1,1:-1");
 		ap.setDefault(ARG_OUT, "data/test_gv_dsv.gv");
 		
 		Log.outf(0, "%s.main", DsvToGraphviz.class.getSimpleName());
@@ -76,7 +78,7 @@ public class DsvToGraphviz {
 		Log.outf(0, " %s<%s>", ARG_RANKSEP, ap.getDouble(ARG_RANKSEP));
 		Log.outf(0, " %s<%s>", ARG_REORG, ap.getEnum(ARG_REORG));
 		Log.outf(0, " %s<%s>", ARG_CASE_SENSITIVE, ap.getBoolean(ARG_CASE_SENSITIVE));
-		Log.outf(0, " %s<%s>", ARG_COLUMN_FILTER, ap.getInt(ARG_COLUMN_FILTER));
+		Log.outf(0, " %s<%s>", ARG_COLUMNS, ap.getString(ARG_COLUMNS));
 		Log.outf(0, " %s<%s>", ARG_OUT, ap.getString(ARG_OUT));
 		
 		Log.beginf(0, "Processing");
@@ -85,7 +87,7 @@ public class DsvToGraphviz {
 			final var propDelimiter = ap.getString(ARG_DELIMITER2);
 			final var reorg = ap.<GvReorg>getEnum(ARG_REORG);
 			final var caseSensitive = ap.getBoolean(ARG_CASE_SENSITIVE);
-			final var columnFilter = ap.getInt(ARG_COLUMN_FILTER);
+			final var columns = ap.getString(ARG_COLUMNS);
 			
 			gvp.begin(ap.getBoolean(ARG_STRICT));
 			gvp.graphPropLayout(ap.getString(ARG_LAYOUT));
@@ -95,7 +97,7 @@ public class DsvToGraphviz {
 			
 			try {
 				final var graph = new GvGraph();
-				final var linkParser = new GvLink.GvLinkParser(graph, propDelimiter, caseSensitive, columnFilter);
+				final var linkParser = new GvLink.GvLinkParser(graph, propDelimiter, caseSensitive, columns);
 				
 				linkParser.addSource(ap.getString(ARG_IN), ap.getString(ARG_SHEET), true);
 				
@@ -804,30 +806,66 @@ public class DsvToGraphviz {
 			
 			private final Function<String, CharSequence> makeName;
 			
-			private final int columnFilter;
+			private final List<Function<Integer, IntStream>> columnsGenerators = new ArrayList<>();
+			
+			private int nodeMaxSize;
+			
+			private int[] columns;
 			
 			private final List<GvSource> sources = new ArrayList<>();
 			
-			public GvLinkParser(final GvGraph graph, final String propDelimiter, final boolean caseSensitive, final int columnFilter) {
+			public GvLinkParser(final GvGraph graph, final String propDelimiter, final boolean caseSensitive, final String columns) {
 				this.graph = graph;
 				this.propDelimiter = propDelimiter;
 				this.makeName = caseSensitive ? String.class::cast : CaseInsensitiveCharSequence::new;
-				this.columnFilter = columnFilter;
+				
+				this.parseColumns(columns);
+			}
+			
+			private final void parseColumns(final String columns) {
+				if (!columns.isEmpty()) {
+					for (final var interval : columns.split(",")) {
+						final var bounds = interval.split(":", -1);
+						
+						if (1 == bounds.length) {
+							final var b = Integer.parseInt(bounds[0]);
+							
+							this.columnsGenerators.add(n -> IntStream.of(b < 0 ? b + n : b));
+						} else if (2 == bounds.length) {
+							if (bounds[0].isEmpty()) {
+								final var b1 = Integer.parseInt(bounds[1]);
+								
+								this.columnsGenerators.add(n -> IntStream.rangeClosed(0, b1 < 0 ? b1 + n : b1));
+							} else if (bounds[1].isEmpty()) {
+								final var b0 = Integer.parseInt(bounds[0]);
+								
+								this.columnsGenerators.add(n -> IntStream.range(b0 < 0 ? b0 + n : b0, n));
+							} else {
+								final var b0 = Integer.parseInt(bounds[0]);
+								final var b1 = Integer.parseInt(bounds[1]);
+								
+								if (b0 < b1) {
+									this.columnsGenerators.add(n -> IntStream.rangeClosed(b0, b1)
+											.map(b -> b < 0 ? b + n : b));
+								} else if (b1 < b0) {
+									this.columnsGenerators.add(n -> IntStream.rangeClosed(b1, b0)
+											.map(b -> b0 + b1 - b)
+											.map(b -> b < 0 ? b + n : b));
+								} else {
+									this.columnsGenerators.add(n -> IntStream.of(b0 < 0 ? b0 + n : b0));
+								}
+							}
+						} else {
+							throw new IllegalArgumentException(String.format("Invalid column interval: %s", interval));
+						}
+					}
+				}
 			}
 			
 			public final GvLink parse(final String[] row, final boolean included) {
 				final var result = new GvLink(included);
-				final var n = row.length / 2;
-				final var selectionStart = -n < this.columnFilter && this.columnFilter < 0 ? this.columnFilter + n : 0;
-				final var selectionEnd = 0 < this.columnFilter && this.columnFilter < n ? this.columnFilter : n;
-				final var selectionSize = selectionEnd - selectionStart;
-				final var srcNode = Arrays.asList(Arrays.copyOfRange(row, selectionStart, selectionEnd));
-				final var dstNode = Arrays.asList(Arrays.copyOfRange(row, n + selectionStart, n + selectionEnd));
 				
-				for (var i = 0; i < selectionSize; i += 1) {
-					this.updatePath(result.getSrcNest(), srcNode, i);
-					this.updatePath(result.getDstNest(), dstNode, i);
-				}
+				this.initNests(row, result);
 				
 				if (result.hasSrc() && result.hasDst()) {
 					result.getSrcNest().get(0).connectCompNode(result.getDstNest().get(0));
@@ -850,6 +888,53 @@ public class DsvToGraphviz {
 				}
 				
 				return result;
+			}
+			
+			private final void initNests(final String[] row, final GvLink link) {
+				final var n = row.length / 2;
+//				final var selectionStart = -n < this.columnFilter && this.columnFilter < 0 ? this.columnFilter + n : 0;
+//				final var selectionEnd = 0 < this.columnFilter && this.columnFilter < n ? this.columnFilter : n;
+				
+				final List<String> srcNode;
+				final List<String> dstNode;
+				
+				if (this.columnsGenerators.isEmpty()) {
+					srcNode = Arrays.asList(Arrays.copyOfRange(row, 0, n));
+					dstNode = Arrays.asList(Arrays.copyOfRange(row, n, n + n));
+				} else {
+					if (n != this.nodeMaxSize) {
+						this.nodeMaxSize = n;
+						this.columns = this.columnsGenerators.stream()
+								.flatMapToInt(f -> f.apply(n))
+								.filter(i -> 0 <= i && i < n)
+								.toArray();
+						
+						Log.out(0, "Columns:", Arrays.toString(this.columns));
+					}
+					
+					srcNode = new ArrayList<>(this.columns.length);
+					dstNode = new ArrayList<>(this.columns.length);
+					
+					for (final var i : this.columns) {
+						srcNode.add(row[i]);
+						dstNode.add(row[n + i]);
+					}
+					
+//					this.columnsGenerators.stream()
+//					.flatMapToInt(f -> f.apply(n))
+//					.filter(i -> 0 <= i && i < n)
+//					.forEach(i -> {
+//						srcNode.add(row[i]);
+//						dstNode.add(row[n + i]);
+//					});
+				}
+				
+				final var nodeSize = srcNode.size();
+				
+				for (var i = 0; i < nodeSize; i += 1) {
+					this.updateNest(link.getSrcNest(), srcNode, i);
+					this.updateNest(link.getDstNest(), dstNode, i);
+				}
 			}
 			
 			private final void parseProps(final String props, final GvLink result) {
@@ -928,17 +1013,17 @@ public class DsvToGraphviz {
 				}
 			}
 			
-			private final void updatePath(final List<GvCluster> path, final List<String> node, final int i) {
+			private final void updateNest(final List<GvCluster> nest, final List<String> node, final int i) {
 				final var name = node.get(i);
 				
 				if (!name.isEmpty()) {
 					final var cluster = this.graph.getCluster(node.size() - 1 - i, this.makeName.apply(name));
 					
-					if (!path.isEmpty()) {
-						path.get(0).connectCompNode(cluster);
+					if (!nest.isEmpty()) {
+						nest.get(0).connectCompNode(cluster);
 					}
 					
-					path.add(cluster);
+					nest.add(cluster);
 				}
 			}
 			
