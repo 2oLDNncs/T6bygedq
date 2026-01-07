@@ -47,6 +47,7 @@ public class DsvToGraphviz {
 	public static final String ARG_CASE_SENSITIVE = "-CaseSensitive";
 	public static final String ARG_COLUMNS = "-Columns";
 	public static final String ARG_INVERT = "-Invert";
+	public static final String ARG_DIR_BACK_HANDLING = "-DirBackHandling";
 	public static final String ARG_OUT = "-Out";
 	
 	public static final void main(final String... args) throws IOException {
@@ -66,6 +67,7 @@ public class DsvToGraphviz {
 		ap.setDefault(ARG_COLUMNS, "");
 //		ap.setDefault(ARG_COLUMNS, "10,-10,1,-1,2:,:2,-2:,:-2,1:2,2:1,-1:1,1:-1");
 		ap.setDefault(ARG_INVERT, false);
+		ap.setDefault(ARG_DIR_BACK_HANDLING, GvDirBackHandling.AUTO);
 		ap.setDefault(ARG_OUT, "data/test_gv_dsv.gv");
 		
 		Log.outf(0, "%s.main", DsvToGraphviz.class.getSimpleName());
@@ -82,6 +84,7 @@ public class DsvToGraphviz {
 		Log.outf(0, " %s<%s>", ARG_CASE_SENSITIVE, ap.getBoolean(ARG_CASE_SENSITIVE));
 		Log.outf(0, " %s<%s>", ARG_COLUMNS, ap.getString(ARG_COLUMNS));
 		Log.outf(0, " %s<%s>", ARG_INVERT, ap.getBoolean(ARG_INVERT));
+		Log.outf(0, " %s<%s>", ARG_DIR_BACK_HANDLING, ap.getEnum(ARG_DIR_BACK_HANDLING));
 		Log.outf(0, " %s<%s>", ARG_OUT, ap.getString(ARG_OUT));
 		
 		Log.beginf(0, "Processing");
@@ -92,6 +95,7 @@ public class DsvToGraphviz {
 			final var caseSensitive = ap.getBoolean(ARG_CASE_SENSITIVE);
 			final var columns = ap.getString(ARG_COLUMNS);
 			final var invert = ap.getBoolean(ARG_INVERT);
+			final var dirBackHandling = ap.<GvDirBackHandling>getEnum(ARG_DIR_BACK_HANDLING);
 			
 			gvp.begin(ap.getBoolean(ARG_STRICT));
 			gvp.graphPropLayout(ap.getString(ARG_LAYOUT));
@@ -102,7 +106,7 @@ public class DsvToGraphviz {
 			try {
 				final var graph = new GvGraph();
 				final var linkParser = new GvLink.GvLinkParser(graph, propDelimiter,
-						caseSensitive, columns, invert);
+						caseSensitive, columns, invert, dirBackHandling);
 				
 				linkParser.addSource(ap.getString(ARG_IN), ap.getString(ARG_SHEET), true);
 				
@@ -130,6 +134,15 @@ public class DsvToGraphviz {
 	public static enum GvReorg {
 		
 		OFF, FOLD;
+		
+	}
+	
+	/**
+	 * @author 2oLDNncs 20260107
+	 */
+	public static enum GvDirBackHandling {
+		
+		AUTO, IGNORE, INVERT, SKIP;
 		
 	}
 	
@@ -277,7 +290,9 @@ public class DsvToGraphviz {
 		}
 		
 		public final void addLink(final GvLink link) {
-			this.links.add(link);
+			if (null != link) {
+				this.links.add(link);
+			}
 		}
 		
 		public final GvCluster getCluster(final int level, final CharSequence name) {
@@ -327,7 +342,7 @@ public class DsvToGraphviz {
 		private final void classifyLinksEndpoints() {
 			this.gvLinks.forEach((src, dsts) -> {
 				dsts.forEach((dst, props) -> {
-					if ("back".equals(props.get("dir"))) {
+					if (GvLink.PROP_VAL_BACK.equals(props.get(GvLink.PROP_KEY_DIR))) {
 						src.setDst(true);
 						dst.setSrc(true);
 					} else {
@@ -585,7 +600,12 @@ public class DsvToGraphviz {
 					pathProps.forEach((propKey, propValue) -> {
 						this.out.println(String.format("%s\t%s=%s", indent, propKey, GraphvizPrinter.formatPropValue(propValue)));
 					});
-					this.out.println(String.format("%s\t%s [label=\"\",shape=point,width=0,height=0]", indent, pathId));
+//					this.out.println(String.format("%s\t%s [label=\"\",shape=point,width=0,height=0]", indent, pathId));
+					this.out.println(String.format("%s\t%s [label=\"%s\""
+							+ ",fixedsize=true,width=0,height=0"
+							+ ",fontsize=0,fontcolor=\"#00000000\""
+							+ ",penwidth=0,color=\"#00000000\"]",
+							indent, pathId, pathProps.get("label")));
 					this.printTrees(graph, subtrees);
 					this.out.println(String.format("%s}", indent));
 				} else {
@@ -774,7 +794,7 @@ public class DsvToGraphviz {
 			for (final var propIt = this.getProps().entrySet().iterator(); propIt.hasNext();) {
 				final var prop = propIt.next();
 				
-				if ("dir".equals(prop.getKey()) && "back".equals(prop.getValue())) {
+				if (PROP_KEY_DIR.equals(prop.getKey()) && PROP_VAL_BACK.equals(prop.getValue())) {
 					var tmp = this.getSrcNest();
 					this.srcNest = this.getDstNest();
 					this.dstNest = tmp;
@@ -800,6 +820,9 @@ public class DsvToGraphviz {
 			}
 		}
 		
+		public static final String PROP_KEY_DIR = "dir";
+		public static final String PROP_VAL_BACK = "back";
+		
 		/**
 		 * @author 2oLDNncs 20251022
 		 */
@@ -817,16 +840,21 @@ public class DsvToGraphviz {
 			
 			private int[] columns;
 			
-			private final boolean invert;
+			private final boolean invertAll;
+			
+			private boolean invertCurrent;
+			
+			private final GvDirBackHandling dirBackHandling;
 			
 			private final List<GvSource> sources = new ArrayList<>();
 			
 			public GvLinkParser(final GvGraph graph, final String propDelimiter,
-					final boolean caseSensitive, final String columns, final boolean invert) {
+					final boolean caseSensitive, final String columns, final boolean invert, final GvDirBackHandling dirBackHandling) {
 				this.graph = graph;
 				this.propDelimiter = propDelimiter;
 				this.makeName = caseSensitive ? String.class::cast : CaseInsensitiveCharSequence::new;
-				this.invert = invert;
+				this.invertAll = invert;
+				this.dirBackHandling = dirBackHandling;
 				
 				this.parseColumns(columns);
 			}
@@ -872,18 +900,38 @@ public class DsvToGraphviz {
 			}
 			
 			public final GvLink parse(final String[] row, final boolean included) {
+				this.invertCurrent = this.invertAll;
+				
 				final var result = new GvLink(included);
-				
-				this.initNests(row, result);
-				
-				if (result.hasSrc() && result.hasDst()) {
-					result.getSrcNest().get(0).connectCompNode(result.getDstNest().get(0));
-				}
 				
 				final var hasProps = ((row.length & 1) != 0) && !Helpers.last(row).isEmpty();
 				
 				if (hasProps) {
 					this.parseProps(Helpers.last(row), result);
+					
+					if (PROP_VAL_BACK.equals(result.getProps().get(PROP_KEY_DIR))) {
+						switch (this.dirBackHandling) {
+						case AUTO:
+							break;
+						case IGNORE:
+							result.getProps().remove(PROP_KEY_DIR);
+							break;
+						case INVERT:
+							result.getProps().remove(PROP_KEY_DIR);
+							this.invertCurrent = !this.invertCurrent;
+							break;
+						case SKIP:
+							return null;
+						default:
+							throw new IllegalStateException(String.format("dirBackHandling: %s", this.dirBackHandling));
+						}
+					}
+				}
+				
+				this.initNests(row, result);
+				
+				if (result.hasSrc() && result.hasDst()) {
+					result.getSrcNest().get(0).connectCompNode(result.getDstNest().get(0));
 				}
 				
 				if (result.hasSrc()) {
@@ -928,7 +976,7 @@ public class DsvToGraphviz {
 				}
 				
 				final var nodeSize = srcNode.size();
-				final var invertSrcDst = this.invert
+				final var invertSrcDst = this.invertCurrent
 						&& IntStream.range(0, n).anyMatch(i -> !row[i].isEmpty())
 						&& IntStream.range(n, n + n).anyMatch(i -> !row[i].isEmpty());
 				
@@ -1008,6 +1056,8 @@ public class DsvToGraphviz {
 			public final void processSources() {
 				for (var i = 0; i < this.sources.size(); i += 1) {
 					final var source = this.sources.get(i);
+					
+					Log.out(0, source);
 					
 					try {
 						processRows(source.getFile(), source.getSheetName(), "\t", incRow -> {
