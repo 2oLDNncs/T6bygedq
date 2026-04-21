@@ -239,8 +239,8 @@ public final class OrientedGraph<V> implements Serializable {
 	
 	private static final long serialVersionUID = 7797977345376468869L;
 	
-	private static final <K, V> boolean add(final Map<K, Collection<V>> arcs, final K tail, final V head) {
-		return arcs.computeIfAbsent(tail, __ -> newSet()).add(head);
+	private static final <K, V> boolean add(final Map<K, Collection<V>> map, final K key, final V value) {
+		return map.computeIfAbsent(key, __ -> newSet()).add(value);
 	}
 	
 	private static final <E> Collection<E> binop(final BiConsumer<Collection<E>, Collection<E>> op,

@@ -1,6 +1,7 @@
 package t6bygedq.lib;
 
 import java.io.PrintStream;
+import java.util.Objects;
 
 import t6bygedq.lib.Helpers.Debug;
 
@@ -12,12 +13,22 @@ public abstract class TextTemplatePrinter {
 	
 	private final PrintStream out;
 	
-	private boolean newLine = true;
+	private String lineSeparator = System.lineSeparator();
+	
+	private boolean linePrinted = true;
 	
 	private int currentLineNumber = 1;
 	
 	public TextTemplatePrinter(final PrintStream out) {
 		this.out = out;
+	}
+	
+	public final String getLineSeparator() {
+		return this.lineSeparator;
+	}
+	
+	public final void setLineSeparator(final String lineSeparator) {
+		this.lineSeparator = Objects.requireNonNull(lineSeparator);
 	}
 	
 	public final int getCurrentLineNumber() {
@@ -31,7 +42,8 @@ public abstract class TextTemplatePrinter {
 	
 	public final void println(final Object x) {
 		this.beforePrint();
-		this.out.println(x);
+		this.out.print(x);
+		this.out.print(this.getLineSeparator());
 		this.afterPrintln();
 	}
 	
@@ -44,14 +56,14 @@ public abstract class TextTemplatePrinter {
 	}
 	
 	private final void beforePrint() {
-		if (this.newLine) {
-			this.newLine = false;
+		if (this.linePrinted) {
+			this.linePrinted = false;
 			this.beforeLine();
 		}
 	}
 	
 	private final void afterPrintln() {
-		this.newLine = true;
+		this.linePrinted = true;
 		this.currentLineNumber += 1;
 		this.afterLine();
 	}
