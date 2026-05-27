@@ -10,10 +10,16 @@ import java.lang.annotation.Target;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Objects;
 import java.util.Random;
+import java.util.Spliterator;
+import java.util.function.BiConsumer;
+import java.util.function.Consumer;
+import java.util.function.Function;
+import java.util.function.ToIntFunction;
 import java.util.stream.Collector;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -34,14 +40,7 @@ public final class Helpers {
 	public static final double[] EMPTY_DOUBLES = new double[0];
 	
 	public static final <E> Iterable<E> in(final Stream<E> stream) {
-		return new Iterable<>() {
-			
-			@Override
-			public final Iterator<E> iterator() {
-				return stream.iterator();
-			}
-			
-		};
+		return stream::iterator;
 	}
 	
 	public static <T> Collector<T, ?, List<T>> toList() {
@@ -333,6 +332,220 @@ public final class Helpers {
 		}
 	}
 	
+	public static final <N> void forEachNodeUp(final N start, final Function<N, N> getParent, final Consumer<N> action) {
+		var node = start;
+		
+		while (null != node) {
+			action.accept(node);
+			node = getParent.apply(node);
+		}
+	}
+	
+	public static final <N> void forEachNodeDepthFirst(final N start, final Function<N, Iterable<? extends N>> getChildren,
+			final Consumer<N> actionBeforeChildren) {
+		forEachNodeDepthFirst(start, getChildren, actionBeforeChildren, null);
+	}
+	
+	public static final <N> void forEachNodeDepthFirst(final N start, final Function<N, Iterable<? extends N>> getChildren,
+			final Consumer<N> actionBeforeChildren, final Consumer<N> actionAfterChildren) {
+		forEachNodeDepthFirst(start, getChildren, actionBeforeChildren, actionAfterChildren, null);
+	}
+	
+	public static final <N> void forEachNodeDepthFirst(final N start, final Function<N, Iterable<? extends N>> getChildren,
+			final Consumer<N> actionBeforeChildren, final Consumer<N> actionAfterChildren,
+			final Consumer<N> actionWhenCycleDetected) {
+		final var todo = new ArrayList<N>();
+		final var done = new HashSet<N>();
+		
+		todo.add(start);
+		
+		while (!todo.isEmpty()) {
+			final var node = todo.remove(todo.size() - 1);
+			
+			if (done.add(node)) {
+				todo.add(node);
+				
+				accept(actionBeforeChildren, node);
+				
+				int i = 0;
+				
+				for (final var child : getChildren.apply(node)) {
+					if (done.contains(child)) {
+						accept(actionWhenCycleDetected, child);
+					} else {
+						todo.add(todo.size() - i, child);
+						i += 1;
+					}
+				}
+			} else {
+				accept(actionAfterChildren, node);
+			}
+		}
+	}
+	
+	public static final <N> void forEachNodeBreadthFirst(final N start, final Function<N, Iterable<? extends N>> getChildren,
+			final Consumer<N> action) {
+		forEachNodeBreadthFirst(start, getChildren, action, null);
+	}
+	
+	public static final <N> void forEachNodeBreadthFirst(final N start, final Function<N, Iterable<? extends N>> getChildren,
+			final Consumer<N> action, final Consumer<N> actionWhenCycleDetected) {
+		final var todo = new ArrayList<N>();
+		final var done = new HashSet<N>();
+		
+		todo.add(start);
+		
+		while (!todo.isEmpty()) {
+			final var node = todo.remove(0);
+			
+			if (done.add(node)) {
+				accept(action, node);
+				
+				for (final var child : getChildren.apply(node)) {
+					if (done.contains(child)) {
+						accept(actionWhenCycleDetected, child);
+					} else {
+						todo.add(child);
+					}
+				}
+			}
+		}
+	}
+	
+	public static final <N> void setNodeParent(
+			final N node, final N parent,
+			final Function<N, N> getParent, final BiConsumer<N, N> setParent,
+			final BiConsumer<N, N> addChild, final BiConsumer<N, N> removeChild) {
+		final var oldParent = getParent.apply(node);
+		
+		if (null != oldParent) {
+			removeChild.accept(oldParent, node);
+		}
+		
+		setParent.accept(node, parent);
+		
+		if (null != parent) {
+			addChild.accept(parent, node);
+		}
+	}
+	
+	public static final <N> Function<N, Iterable<? extends N>> generator(final ToIntFunction<N> getElementCount,
+			final IndexFunction<N, N> getElement) {
+		return node -> new Iterable<>() {
+			
+			@Override
+			public final Iterator<N> iterator() {
+				return new Iterator<>() {
+					
+					private int currentIndex = 0;
+					
+					@Override
+					public final boolean hasNext() {
+						return this.currentIndex < getElementCount.applyAsInt(node);
+					}
+					
+					@Override
+					public final N next() {
+						final var result = getElement.apply(node, this.currentIndex);
+						
+						this.currentIndex += 1;
+						
+						return result;
+					}
+					
+				};
+			}
+			
+			@Override
+			public final Spliterator<N> spliterator() {
+				return new Spliterator<>() {
+					
+					private int currentIndex = 0;
+					
+					@Override
+					public final boolean tryAdvance(final Consumer<? super N> action) {
+						if (this.currentIndex < this.estimateSize()) {
+							action.accept(getElement.apply(node, this.currentIndex));
+							
+							return true;
+						}
+						
+						return false;
+					}
+					
+					@Override
+					public final Spliterator<N> trySplit() {
+						// TODO Auto-generated method stub
+						return null;
+					}
+					
+					@Override
+					public final long estimateSize() {
+						return getElementCount.applyAsInt(node);
+					}
+					
+					@Override
+					public final int characteristics() {
+						return Spliterator.SIZED | Spliterator.ORDERED;
+					}
+					
+				};
+			}
+			
+		};
+	}
+	
+	public static final <T> Iterable<T> generator(final ExceptionalSupplier<T> supplier) {
+		return generator(supplier, null);
+	}
+	
+	public static final <T> Iterable<T> generator(final ExceptionalSupplier<T> supplier, final Function<Exception, T> actionWhenException) {
+		return new Iterable<>() {
+			
+			@Override
+			public final Iterator<T> iterator() {
+				return new Iterator<>() {
+					
+					private T next = this.get();
+					
+					@Override
+					public final boolean hasNext() {
+						return null != this.next;
+					}
+					
+					@Override
+					public final T next() {
+						final var result = this.next;
+						
+						this.next = this.get();
+						
+						return result;
+					}
+					
+					private final T get() {
+						try {
+							return supplier.get();
+						} catch (final Exception e) {
+							if (null != actionWhenException) {
+								return actionWhenException.apply(e);
+							}
+							
+							return null;
+						}
+					}
+					
+				};
+			}
+			
+		};
+	}
+	
+	private static <T> void accept(final Consumer<T> action, final T arg) {
+		if (null != action) {
+			action.accept(arg);
+		}
+	}
+	
 	@Target({ElementType.TYPE})
 	@Retention(RetentionPolicy.RUNTIME)
 	public static abstract @interface Debug {
@@ -367,5 +580,28 @@ public final class Helpers {
 		}
 		
 	}
+	
+	/**
+	 * @author 2oLDNncs 20260506
+	 *
+	 * @param <T>
+	 * @param <R>
+	 */
+	public static abstract interface IndexFunction<T, R> {
 		
+		public abstract R apply(T t, int index);
+		
+	}
+	
+	/**
+	 * @author 2oLDNncs 20260507
+	 *
+	 * @param <R>
+	 */
+	public static abstract interface ExceptionalSupplier<R> {
+		
+		public abstract R get() throws Exception;
+		
+	}
+	
 }
